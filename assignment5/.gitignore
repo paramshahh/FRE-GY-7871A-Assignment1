@@ -1,0 +1,8 @@
+# Downloaded data and pipeline caches are reproducible from build_report.py
+data/**
+!data/
+outputs/results.pkl
+outputs/figures/*
+outputs/tables/*
+__pycache__/
+.pytest_cache/
