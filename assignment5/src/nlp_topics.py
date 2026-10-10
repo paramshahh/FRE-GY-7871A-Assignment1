@@ -38,6 +38,7 @@ OTHER = "Other"
 ELECTION_QUERY = ('(midterms OR midterm OR "2026 election" OR congress OR senate OR '
                   '"house race" OR ballot OR candidate OR #midterms2026 OR #vote2026)')
 GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
+MAX_QUERY_CHARS = 512
 GDELT_QUERY = ('(midterms OR "midterm elections" OR "midterm election") '
                'sourcecountry:US sourcelang:english')
 
@@ -83,8 +84,11 @@ def build_query(base: str, since: pd.Timestamp, until: pd.Timestamp) -> str:
     """Advanced-search query for [since, until) in UTC, English, no retweets."""
     fmt = "%Y-%m-%d_%H:%M:%S_UTC"
     extra = " ".join(op for op in ("lang:en", "-is:retweet") if op not in base)
-    return f"{base} {extra} since:{since.strftime(fmt)} until:{until.strftime(fmt)}".replace(
+    q = f"{base} {extra} since:{since.strftime(fmt)} until:{until.strftime(fmt)}".replace(
         "  ", " ")
+    if len(q) > MAX_QUERY_CHARS:  # the API rejects these; fail before spending anything
+        raise ValueError(f"query is {len(q)} characters; the limit is {MAX_QUERY_CHARS}")
+    return q
 
 
 def parse_tweets(raw: list[dict]) -> pd.DataFrame:
@@ -135,6 +139,11 @@ class CreditLedger:
     def can_spend(self, credits: int = 20 * config.CREDITS_PER_TWEET) -> bool:
         return self.spent() + credits <= self.budget
 
+    def attempts(self, key: str) -> int:
+        if not self.path.exists():
+            return 0
+        return int((pd.read_csv(self.path)["key"] == key).sum())
+
     def record(self, key: str, n_tweets: int) -> int:
         credits = max(1, n_tweets) * config.CREDITS_PER_TWEET
         row = pd.DataFrame([{"ts": pd.Timestamp.now(tz="UTC"), "key": key,
@@ -150,31 +159,37 @@ def account_balance(api_key: str | None = None) -> int:
     return int(r.json()["recharge_credits"])
 
 
+STRATA = {"p": "general", "a": "affordability"}
+
+
 def collect_tweets(calendar: pd.DatetimeIndex, page: int = 1,
                    client: TwitterAPIClient | None = None,
                    ledger: CreditLedger | None = None,
-                   query: str | None = None) -> pd.DataFrame:
-    """Fetch page ``page`` of the session query for every trading session, within budget.
+                   query: str | None = None, stratum: str = "p") -> pd.DataFrame:
+    """Fetch page ``page`` of a stratum's session query for every trading session.
 
-    Pages are cached as gzipped raw JSON (``tweets/<session>_p<page>.json.gz``) so
-    nothing is ever paid for twice; page 2 needs page 1's cursor and is skipped
-    for sessions whose page 1 said there was no next page.
+    Strata: ``p`` = general political-issue query, ``a`` = affordability query.
+    Pages are cached as gzipped raw JSON (``tweets/<session>_<stratum><page>.json.gz``)
+    so nothing is ever paid for twice; page 2 needs page 1's cursor and is
+    skipped for sessions whose page 1 said there was no next page.
     """
     import gzip
     import json
 
     client = client or TwitterAPIClient()
     ledger = ledger or CreditLedger()
-    query = query or f"{config.TWITTER_ISSUES} {config.TWITTER_CONTEXT} {config.TWITTER_FILTERS}"
+    if query is None:
+        issues = config.TWITTER_AFFORDABILITY if stratum == "a" else config.TWITTER_ISSUES
+        query = f"{issues} {config.TWITTER_CONTEXT} {config.TWITTER_FILTERS}"
     out_dir = config.RAW_DIR / "tweets"
     checked = 0
     for session, lo, hi in session_windows(calendar):
-        path = out_dir / f"{session:%Y-%m-%d}_p{page}.json.gz"
+        path = out_dir / f"{session:%Y-%m-%d}_{stratum}{page}.json.gz"
         if path.exists():
             continue
         cursor = ""
         if page > 1:
-            prev = out_dir / f"{session:%Y-%m-%d}_p{page - 1}.json.gz"
+            prev = out_dir / f"{session:%Y-%m-%d}_{stratum}{page - 1}.json.gz"
             if not prev.exists():
                 continue
             js = json.loads(gzip.open(prev, "rt").read())
@@ -198,7 +213,13 @@ def collect_tweets(calendar: pd.DatetimeIndex, page: int = 1,
         r.raise_for_status()
         js = r.json()
         n = len(js.get("tweets", []) or [])
-        ledger.record(f"{session:%Y-%m-%d}_p{page}", n)
+        key = f"{session:%Y-%m-%d}_{stratum}{page}"
+        ledger.record(key, n)
+        if n == 0 and ledger.attempts(key) < 3:
+            # an empty first page for a whole trading session is an upstream hiccup,
+            # not an answer: leave it uncached so the next run retries it
+            log.warning("%s returned no tweets; will retry on the next run", key)
+            continue
         with gzip.open(path, "wt") as fh:
             json.dump(js, fh)
         time.sleep(client.pause)
@@ -206,20 +227,32 @@ def collect_tweets(calendar: pd.DatetimeIndex, page: int = 1,
 
 
 def load_cached_tweets() -> pd.DataFrame:
-    """Every cached page, parsed and de-duplicated, with the session it was fetched for."""
+    """Every cached page, parsed, with its session and stratum.
+
+    A tweet returned by both strata is kept once, attributed to the general
+    stratum, so general-stratum salience is never inflated by the oversample.
+    """
     import gzip
     import json
+    import re as _re
 
     frames = []
-    for f in sorted((config.RAW_DIR / "tweets").glob("*_p*.json.gz")):
+    for f in sorted((config.RAW_DIR / "tweets").glob("*.json.gz")):
+        m = _re.match(r"(\d{4}-\d{2}-\d{2})_([pa])(\d+)\.json\.gz$", f.name)
+        if not m:
+            continue
         js = json.loads(gzip.open(f, "rt").read())
         df = parse_tweets(js.get("tweets", []) or [])
-        df["fetch_session"] = f.name.split("_p")[0]
-        df["page"] = int(f.name.split("_p")[1].split(".")[0])
+        df["fetch_session"] = m.group(1)
+        df["stratum"] = STRATA[m.group(2)]
+        df["page"] = int(m.group(3))
         frames.append(df)
     if not frames:
         return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True).drop_duplicates(subset=["id"])
+    out = pd.concat(frames, ignore_index=True)
+    out = out.sort_values("stratum", key=lambda s: s.ne("general"))
+    return out.drop_duplicates(subset=["id"]).sort_values(["fetch_session", "stratum"]) \
+        .reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
@@ -286,36 +319,51 @@ def parse_gdelt_timeline(payload: dict) -> pd.DataFrame:
     return df.set_index("date")
 
 
-def collect_gdelt_timelines(start: str, end: str, refresh: bool = False) -> pd.DataFrame:
+def collect_gdelt_timelines(start: str, end: str, refresh: bool = False,
+                            pause: float = 45.0) -> pd.DataFrame:
     """Daily article counts, total monitored volume and GDELT tone, overall and per topic.
 
     Columns: ``count_<topic>``, ``tone_<topic>`` (and ``count_All``/``tone_All``
-    for all midterm coverage) plus ``norm`` = all US English articles GDELT
-    monitored that day, the denominator for salience.
+    for all midterm coverage) plus ``norm`` = all articles GDELT monitored that
+    day, used to detect feed outages. Every (query, mode) response is cached on
+    its own under ``data/raw/gdelt_timelines/``, so an interrupted run resumes
+    where it stopped instead of starting over.
     """
-    path = config.RAW_DIR / "gdelt_timelines.csv"
-    if path.exists() and not refresh:
-        return pd.read_csv(path, index_col=0, parse_dates=True)
+    import json
+
+    cache = config.RAW_DIR / "gdelt_timelines"
+    cache.mkdir(parents=True, exist_ok=True)
     s = requests.Session()
     window = {"startdatetime": f"{pd.Timestamp(start):%Y%m%d}000000",
               "enddatetime": f"{pd.Timestamp(end):%Y%m%d}235959"}
     queries = {"All": f"{config.GDELT_MIDTERMS} {config.GDELT_FILTERS}"}
     queries.update({k: f"{config.GDELT_MIDTERMS} {v} {config.GDELT_FILTERS}"
                     for k, v in config.GDELT_TOPIC_TERMS.items()})
-    cols = {}
+    cols, missing = {}, []
     for name, q in queries.items():
-        vol = parse_gdelt_timeline(gdelt_request({"query": q, "mode": "timelinevolraw",
-                                                  "timelinesmooth": 0, **window}, s))
-        tone = parse_gdelt_timeline(gdelt_request({"query": q, "mode": "timelinetone",
-                                                   "timelinesmooth": 0, **window}, s))
-        cols[f"count_{name}"] = vol["value"]
-        if name == "All":
-            cols["norm"] = vol["norm"]
-        cols[f"tone_{name}"] = tone["value"]
-        log.info("GDELT %s: %d days", name, len(vol))
-    df = pd.DataFrame(cols)
-    df.to_csv(path)
-    return df
+        for mode in ("timelinevolraw", "timelinetone"):
+            path = cache / f"{re.sub(r'[^A-Za-z]+', '_', name)}_{mode}.json"
+            if refresh or not path.exists():
+                try:
+                    payload = gdelt_request({"query": q, "mode": mode, "timelinesmooth": 0,
+                                             **window}, s, pause=pause)
+                    path.write_text(json.dumps(payload), encoding="utf-8")
+                    log.info("GDELT %s %s cached", name, mode)
+                except ConnectionError as exc:
+                    log.warning("GDELT %s %s failed: %s", name, mode, exc)
+                    missing.append(f"{name}/{mode}")
+                    continue
+            tl = parse_gdelt_timeline(json.loads(path.read_text(encoding="utf-8")))
+            if tl.empty:
+                missing.append(f"{name}/{mode} (empty)")
+                continue
+            key = "count" if mode == "timelinevolraw" else "tone"
+            cols[f"{key}_{name}"] = tl["value"]
+            if name == "All" and mode == "timelinevolraw":
+                cols["norm"] = tl["norm"]
+    if missing:
+        log.warning("GDELT timelines still missing: %s (re-run to resume)", missing)
+    return pd.DataFrame(cols)
 
 
 def gdelt_outages(norm: pd.Series, window: int = 15, floor: float = 0.3) -> pd.Series:

@@ -94,15 +94,39 @@ def _get(session: requests.Session, url: str, params: dict | None = None,
     raise RuntimeError("unreachable")
 
 
+def _target_prob(series: dict[str, pd.Series], target: str = "D") -> pd.Series:
+    """P(target) normalised over every outcome contract (removes the overround).
+
+    Outcome quotes are stamped independently, so each side's last price is
+    carried forward; a timestamp counts only once every outcome has quoted.
+    """
+    if target not in series or series[target].empty:
+        raise LookupError(f"No {target} contract found")
+    df = pd.DataFrame(series).sort_index().ffill().dropna()
+    return (df[target] / df.sum(axis=1)).dropna()
+
+
 def _two_party_prob(series: dict[str, pd.Series]) -> pd.Series:
     """P(D) normalised over the D and R contracts (D alone if R is absent)."""
-    if "D" not in series or series["D"].empty:
-        raise LookupError("No Democratic contract found")
-    # D and R quotes are stamped independently: carry each side's last price forward
-    df = pd.DataFrame(series).sort_index().ffill()
-    if "R" in df and df["R"].notna().any():
-        return (df["D"] / (df["D"] + df["R"])).dropna()
-    return df["D"].dropna()
+    if "R" not in series or series["R"].empty:
+        if "D" not in series or series["D"].empty:
+            raise LookupError("No Democratic contract found")
+        return series["D"].dropna()
+    return _target_prob({"D": series["D"], "R": series["R"]}, "D")
+
+
+def sweep_key(label: str) -> str | None:
+    """'2026 Balance of Power: R Senate, D House' -> 'DR' (House party, then Senate party)."""
+    s = (label or "").upper()
+    m_h = re.search(r"\b([DR])[- ]?HOUSE|HOUSE[- ]?([DR])\b", s)
+    m_s = re.search(r"\b([DR])[- ]?SENATE|SENATE[- ]?([DR])\b", s)
+    if "DEMOCRATS SWEEP" in s:
+        return "DD"
+    if "REPUBLICANS SWEEP" in s:
+        return "RR"
+    if not (m_h and m_s):
+        return None
+    return (m_h.group(1) or m_h.group(2)) + (m_s.group(1) or m_s.group(2))
 
 
 # ---------------------------------------------------------------------------
@@ -149,12 +173,34 @@ def _windows(start: str, end: str, days: int) -> list[tuple[int, int]]:
     return out
 
 
+def find_polymarket_sweep_tokens(search_payload: dict) -> dict[str, str]:
+    """Outcome ('DD', 'DR', 'RD', 'RR', 'Other') -> YES token for the balance-of-power event."""
+    tokens = {}
+    for ev in search_payload.get("events", []) or []:
+        if "balance of power" not in (ev.get("title") or "").lower() \
+                or "2026" not in (ev.get("title") or ""):
+            continue
+        for m in ev.get("markets", []) or []:
+            q = m.get("question", "")
+            key = sweep_key(q) or ("Other" if q.strip().lower().endswith("other") else None)
+            ids = _as_list(m.get("clobTokenIds"))
+            outcomes = [o.lower() for o in _as_list(m.get("outcomes"))]
+            if key and ids:
+                tokens.setdefault(key, ids[outcomes.index("yes") if "yes" in outcomes else 0])
+    return tokens
+
+
 def fetch_polymarket(chamber: str, session: requests.Session, start: str = config.START,
                      end: str = config.END) -> pd.Series:
     """Hourly P(Dem) from the CLOB price history (windows of 14 days, the API maximum)."""
-    payload = _get(session, f"{POLY_GAMMA}/public-search",
-                   {"q": f"control the {chamber} after the 2026 Midterm elections"})
-    tokens = find_polymarket_tokens(payload, chamber)
+    if chamber == "Sweep":
+        payload = _get(session, f"{POLY_GAMMA}/public-search",
+                       {"q": config.POLYMARKET_SWEEP_SEARCH})
+        tokens = find_polymarket_sweep_tokens(payload)
+    else:
+        payload = _get(session, f"{POLY_GAMMA}/public-search",
+                       {"q": f"control the {chamber} after the 2026 Midterm elections"})
+        tokens = find_polymarket_tokens(payload, chamber)
     if not tokens:
         raise LookupError(f"Polymarket {chamber} control markets not found")
     series = {}
@@ -169,7 +215,7 @@ def fetch_polymarket(chamber: str, session: requests.Session, start: str = confi
                            & (h.index < pd.Timestamp(hi, unit="s", tz="UTC"))])
         s = pd.concat(parts).sort_index()
         series[party] = s[~s.index.duplicated(keep="last")]
-    return _two_party_prob(series)
+    return _target_prob(series, "DD") if chamber == "Sweep" else _two_party_prob(series)
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +264,7 @@ def fetch_kalshi(chamber: str, session: requests.Session, start: str = config.ST
     """Hourly P(Dem) from Kalshi candlesticks, requested ~100 days (< 5,000 candles) at a time."""
     series_ticker = config.KALSHI_SERIES[chamber]
     series = {}
-    for party in ("D", "R"):
+    for party in config.KALSHI_OUTCOMES[chamber]:
         ticker = f"{config.KALSHI_EVENTS[chamber]}-{party}"
         parts = []
         for lo, hi in _windows(start, end, 100):
@@ -229,7 +275,7 @@ def fetch_kalshi(chamber: str, session: requests.Session, start: str = config.ST
             time.sleep(2.0)  # public tier rate limit
         s = pd.concat(parts).sort_index()
         series[party] = s[~s.index.duplicated(keep="last")]
-    return _two_party_prob(series)
+    return _target_prob(series, "DD") if chamber == "Sweep" else _two_party_prob(series)
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +420,7 @@ def load_prediction_markets(start: str = config.START, end: str = config.END,
             "predictit": load_predictit_history,
         }
         for venue, fn in fetchers.items():
-            for ch in config.CHAMBERS:
+            for ch in config.CONTRACTS if venue != "predictit" else config.CHAMBERS:
                 try:
                     daily = to_daily(fn(ch), cal)
                     rows.append(pd.DataFrame({"date": cal, "venue": venue, "chamber": ch,

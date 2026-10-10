@@ -209,7 +209,7 @@ def build_market_panel(ohlc: dict[str, pd.DataFrame], fred: pd.DataFrame,
         fields[f] = align_to_calendar(wide, calendar, max_ffill=0,
                                       report=rep if f == "Close" else None)
     close = fields["Close"]
-    etfs = [t for t in config.SECTOR_ETFS if t in close.columns]
+    etfs = [t for t in config.ASSETS if t in close.columns]
     rets = log_returns(close[etfs + [config.BENCHMARK]])
     excess = excess_returns(rets)
     vol = range_volatility(fields["High"][etfs], fields["Low"][etfs])
@@ -266,7 +266,7 @@ def load_market_panel(start: str = config.START, end: str = config.END,
     There is no simulated fallback: if no real data can be obtained this raises.
     """
     cal = trading_calendar(start, end)
-    tickers = config.SECTOR_ETFS + [config.BENCHMARK] + list(config.YAHOO_MACRO.values())
+    tickers = config.ASSETS + [config.BENCHMARK] + list(config.YAHOO_MACRO.values())
     fred_path = config.RAW_DIR / "fred.csv"
     source = "cache"
     if refresh:
@@ -296,7 +296,7 @@ def load_market_panel(start: str = config.START, end: str = config.END,
             f"{config.RAW_DIR}. Check network access to query1.finance.yahoo.com, "
             "stooq.com and fred.stlouisfed.org.")
     ohlc = _read_cached_ohlc(start, end)
-    absent = [t for t in config.SECTOR_ETFS + [config.BENCHMARK] if t not in ohlc]
+    absent = [t for t in config.ASSETS + [config.BENCHMARK] if t not in ohlc]
     if absent:
         raise ValueError(f"Price data missing for {absent}")
     fred = clean_index(pd.read_csv(fred_path, index_col=0, parse_dates=True))

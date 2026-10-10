@@ -13,7 +13,8 @@ import pandas as pd
 
 from src import config
 from src import data_quality as dq
-from src.data_loader import _read_cached_ohlc, download_stooq, load_market_panel
+from src.data_loader import (_read_cached_ohlc, download_fred, download_yahoo,
+                             load_market_panel)
 from src.prediction_markets import load_prediction_markets
 from src.table_generator import to_markdown
 
@@ -36,11 +37,19 @@ def main() -> None:
     pm = load_prediction_markets(refresh=refresh)
     ohlc = _read_cached_ohlc(config.START, config.END)
     fred = pd.read_csv(config.RAW_DIR / "fred.csv", index_col=0, parse_dates=True)
+    sib_tickers = sorted({s for v in config.SIBLINGS.values() for s in v} - set(ohlc))
     try:
-        stooq = download_stooq(config.SECTOR_ETFS + [config.BENCHMARK], config.START, config.END)
-        xsrc = dq.cross_source_returns(ohlc, stooq)
+        sibs = download_yahoo(sib_tickers, config.START, config.END)
+        sib_summary, sib_flags = dq.sibling_divergence(ohlc, sibs, config.SIBLINGS)
     except Exception as exc:
-        xsrc = pd.DataFrame({"error": [repr(exc)]})
+        sib_summary, sib_flags = pd.DataFrame({"error": [repr(exc)]}), pd.DataFrame()
+    try:
+        sp = download_fred(["SP500"], config.START, config.END)
+        idx_check, idx_flags = dq.sibling_divergence(
+            {"SPY": ohlc["SPY"]}, {"SP500": sp.rename(columns={"SP500": "Close"})},
+            {"SPY": ["SP500"]})
+    except Exception as exc:
+        idx_check, idx_flags = pd.DataFrame({"error": [repr(exc)]}), pd.DataFrame()
 
     agree, gaps = dq.venue_agreement(pm.by_venue)
     pi_agree, _ = dq.venue_agreement(pm.by_venue, "polymarket", "predictit")
@@ -54,8 +63,14 @@ def main() -> None:
                                                axis=1)),
                   "Each is checked against the second vendor below before being trusted."),
           section("Consecutive unchanged closes", dq.stale_prices(mkt.close)),
-          section("Yahoo (adjusted) vs Stooq (unadjusted) daily returns", xsrc,
-                  "Differences on ex-dividend days are expected; anything else is a feed error."),
+          section("Same-exposure funds from other issuers (second-source check)", sib_summary,
+                  "Stooq blocked repeated downloads, so each fund is triangulated against funds "
+                  "with the same exposure from other issuers instead."),
+          section("Days a fund diverges from its sibling by > 6 robust SD", sib_flags),
+          section("SPY vs the S&P 500 index (FRED SP500)", idx_check,
+                  "On 2026-06-26 the index prints -4.7bp while SPY, IVV and VOO (three "
+                  "issuers) all fall 73-86bp: the index close is stale, the ETF data is right."),
+          section("SPY vs index divergence days", idx_flags),
           section("FRED yields", dq.fred_checks(fred.loc[config.START:config.END])),
           "## 2. Prediction markets\n\n",
           section("Coverage (trading days with a quote at or before 16:00 ET)", pm.coverage),

@@ -122,3 +122,16 @@ def test_ledger_enforces_budget(tmp_path):
     assert led.spent() == 300 and led.can_spend(300) and not led.can_spend(301)
     led.record("d2", 0)          # an empty page still costs the 15-credit minimum
     assert led.spent() == 315
+
+
+def test_query_length_guard():
+    lo, hi = pd.Timestamp("2026-09-10", tz="UTC"), pd.Timestamp("2026-09-11", tz="UTC")
+    with pytest.raises(ValueError):
+        nt.build_query("(" + " OR ".join(["inflation"] * 60) + ")", lo, hi)
+
+
+def test_ledger_counts_attempts(tmp_path):
+    led = nt.CreditLedger(tmp_path / "ledger.csv")
+    led.record("2026-08-14_p1", 0)
+    led.record("2026-08-14_p1", 0)
+    assert led.attempts("2026-08-14_p1") == 2 and led.attempts("other") == 0

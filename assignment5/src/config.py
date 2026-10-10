@@ -70,6 +70,17 @@ SECTOR_MAP: dict[str, dict[str, int]] = {
     "Technology/AI": {"XLK": 0},
 }
 SECTOR_ETFS = ["XLE", "ICLN", "XLV", "XLF", "XAR", "ITA", "XLK", "ITB", "XHB"]
+# Single-name midterm basket, by policy exposure
+BASKET_STOCKS = {
+    "Clean energy": ["ENPH"], "Traditional energy": ["XOM"], "Managed care": ["UNH"],
+    "Banks": ["JPM"], "Defense": ["LMT"],
+    "Big Tech / AI": ["NVDA", "MSFT", "GOOGL", "META", "AAPL"],
+}
+STOCKS = [t for v in BASKET_STOCKS.values() for t in v]
+ASSETS = SECTOR_ETFS + STOCKS
+# Same-exposure funds from other issuers, used only to audit each feed day by day
+SIBLINGS = {"SPY": ["IVV", "VOO"], "XLE": ["VDE"], "XLV": ["VHT"], "XLF": ["VFH"],
+            "XLK": ["VGT"], "XAR": ["ITA"], "ITB": ["XHB"]}
 BENCHMARK = "SPY"
 YAHOO_MACRO = {"VIX": "^VIX"}
 FRED_SERIES = {"DGS2": "DGS2", "DGS3MO": "DGS3MO"}
@@ -79,15 +90,22 @@ FRED_SERIES = {"DGS2": "DGS2", "DGS3MO": "DGS3MO"}
 # checked against each venue before a live run; override with env vars.
 # ---------------------------------------------------------------------------
 CHAMBERS = ("House", "Senate")
+# Contracts tracked: chamber control plus the Democratic sweep (D House and D Senate)
+CONTRACTS = ("House", "Senate", "Sweep")
 # Polymarket markets are located by question text via Gamma /public-search, so no slug is pinned.
 KALSHI_SERIES = {
     "House": os.environ.get("KALSHI_HOUSE_SERIES", "CONTROLH"),
     "Senate": os.environ.get("KALSHI_SENATE_SERIES", "CONTROLS"),
+    "Sweep": os.environ.get("KALSHI_SWEEP_SERIES", "KXBALANCEPOWERCOMBO"),
 }
-KALSHI_EVENTS = {  # markets are <event>-D and <event>-R
+KALSHI_EVENTS = {  # chamber markets are <event>-D/-R; the combo is <event>-DD/-DR/-RD/-RR
     "House": os.environ.get("KALSHI_HOUSE_EVENT", "CONTROLH-2026"),
     "Senate": os.environ.get("KALSHI_SENATE_EVENT", "CONTROLS-2026"),
+    "Sweep": os.environ.get("KALSHI_SWEEP_EVENT", "KXBALANCEPOWERCOMBO-27FEB"),
 }
+KALSHI_OUTCOMES = {"House": ("D", "R"), "Senate": ("D", "R"),
+                   "Sweep": ("DD", "DR", "RD", "RR")}  # House first, then Senate
+POLYMARKET_SWEEP_SEARCH = "Balance of Power: 2026 Midterms"
 PREDICTIT_MARKET_IDS = {  # "Which party will win the House in the 2026 election?" etc.
     "House": int(os.environ.get("PREDICTIT_HOUSE_ID", 8157)),
     "Senate": int(os.environ.get("PREDICTIT_SENATE_ID", 8155)),
@@ -134,6 +152,12 @@ TWITTER_ISSUES = ('(inflation OR "grocery prices" OR tariffs OR mortgage OR "hom
                   'energy OR climate OR border OR immigration OR deportation OR ukraine OR '
                   'china OR military OR "artificial intelligence")')
 TWITTER_CONTEXT = '(midterms OR midterm OR congress OR democrats OR republicans OR GOP OR ballot)'
+# Affordability stratum: oversamples the pocketbook issues (housing and healthcare
+# costs). Used for topic tone only; salience comes from the general stratum.
+TWITTER_AFFORDABILITY = ('(mortgage OR "mortgage rates" OR "home prices" OR rent OR '
+                         '"housing costs" OR homebuyers OR "first-time buyers" OR premiums OR '
+                         'deductibles OR "drug prices" OR "health insurance" OR obamacare OR '
+                         '"ACA subsidies" OR "medical bills")')
 TWITTER_FILTERS = "lang:en -is:retweet -is:reply min_faves:5 -min_faves:150"
 MIN_FOLLOWERS = 10
 MIN_VIEWS = 100

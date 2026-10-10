@@ -136,3 +136,36 @@ def large_moves(long: pd.DataFrame, consensus: pd.DataFrame,
                 row[f"d_{v}_pp"] = 100 * dv
             rows.append(row)
     return pd.DataFrame(rows)
+
+
+def sibling_divergence(ohlc: dict[str, pd.DataFrame], siblings: dict[str, pd.DataFrame],
+                       pairs: dict[str, list[str]], z: float = 6.0) -> tuple[pd.DataFrame,
+                                                                            pd.DataFrame]:
+    """Compare each fund's daily returns with same-exposure funds from other issuers.
+
+    A day where a fund diverges from *all* its siblings by more than ``z`` robust
+    SDs of the usual tracking difference points at a bad print in that feed; a
+    day where the siblings move together and the fund does too is a real move.
+    """
+    summ, flags = [], []
+    for t, sibs in pairs.items():
+        if t not in ohlc:
+            continue
+        a = np.log(ohlc[t]["Close"]).diff().rename(t)
+        for s in sibs:
+            src = siblings.get(s) if s in siblings else ohlc.get(s)
+            if src is None:
+                continue
+            b = np.log(src["Close"]).diff().rename(s)
+            j = pd.concat([a, b], axis=1, sort=True).dropna()
+            d = j[t] - j[s]
+            mad = 1.4826 * (d - d.median()).abs().median()
+            zs = (d - d.median()) / mad if mad > 0 else d * 0
+            summ.append({"fund": t, "sibling": s, "days": len(j), "corr": j[t].corr(j[s]),
+                         "median_abs_diff_bp": 1e4 * d.abs().median(),
+                         f"days_over_{int(z)}sd": int((zs.abs() > z).sum())})
+            for day in zs.index[zs.abs() > z]:
+                flags.append({"fund": t, "sibling": s, "date": day.date(),
+                              "fund_bp": 1e4 * j.loc[day, t], "sibling_bp": 1e4 * j.loc[day, s],
+                              "z": zs[day]})
+    return pd.DataFrame(summ), pd.DataFrame(flags)

@@ -99,3 +99,15 @@ def test_consensus_renormalises_over_reporting_venues():
     c = pm.consensus(long, {"polymarket": 0.5, "kalshi": 0.5})
     assert c.loc["2026-10-06", "House"] == pytest.approx(0.85)
     assert c.loc["2026-10-07", "House"] == pytest.approx(0.70)
+
+
+def test_sweep_keys_and_normalisation():
+    assert pm.sweep_key("2026 Balance of Power: D Senate, D House") == "DD"
+    assert pm.sweep_key("2026 Balance of Power: R Senate, D House") == "DR"
+    assert pm.sweep_key("D-House, R-Senate") == "DR"
+    assert pm.sweep_key("R-House, D-Senate") == "RD"
+    assert pm.sweep_key("Democrats sweep") == "DD" and pm.sweep_key("Other") is None
+    idx = pd.to_datetime(["2026-10-01 15:00+00:00"])
+    p = pm._target_prob({k: pd.Series([v], idx) for k, v in
+                         {"DD": 0.61, "DR": 0.29, "RD": 0.01, "RR": 0.10}.items()}, "DD")
+    assert p.iloc[0] == pytest.approx(0.61 / 1.01)
