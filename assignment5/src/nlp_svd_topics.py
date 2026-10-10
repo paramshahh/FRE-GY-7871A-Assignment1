@@ -25,19 +25,19 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 from sklearn.decomposition import TruncatedSVD
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
 
 from . import config
 from .data_loader import to_trading_day
 from .nlp_topics import OTHER, ToneScorer
 
 TOKEN = re.compile(r"(?u)[#$]?[a-z][a-z0-9_'-]+")
-STOP = {"the", "and", "for", "that", "this", "with", "are", "was", "but", "not", "you",
-        "they", "have", "has", "had", "will", "from", "their", "our", "his", "her", "its",
-        "who", "what", "when", "all", "about", "just", "into", "than", "them", "been",
-        "were", "would", "there", "more", "out", "can", "how", "one", "your", "now",
-        "amp", "via", "it's", "don't", "we're", "i'm", "he's", "that's", "also", "only",
-        "like", "get", "being", "over", "very", "much", "most", "some", "any", "even"}
+# scikit-learn's English list plus Twitter/web noise; issue words are never stopped
+STOP = set(ENGLISH_STOP_WORDS) | {
+    "amp", "via", "it's", "don't", "we're", "i'm", "he's", "that's", "they're", "you're",
+    "can't", "won't", "didn't", "doesn't", "isn't", "let's", "just", "like", "get", "got",
+    "going", "want", "need", "said", "says", "say", "today", "time", "year", "years", "new",
+    "make", "know", "think", "right", "way", "really", "rt", "us", "lot", "day", "week"}
 _URL = re.compile(r"https?://\S+")
 _MENTION = re.compile(r"@\w+")
 
@@ -61,6 +61,28 @@ def build_tfidf(texts: pd.Series, min_df: int = 3, max_df: float = 0.4,
 # ---------------------------------------------------------------------------
 # LSA
 # ---------------------------------------------------------------------------
+def varimax(L: np.ndarray, gamma: float = 1.0, max_iter: int = 200,
+            tol: float = 1e-8) -> np.ndarray:
+    """Orthogonal rotation matrix R maximising the variance of squared loadings of L R.
+
+    Rotating the retained term loadings inside the same k-dimensional subspace
+    leaves the rank-k approximation, its fitted values and its explained
+    variance unchanged; it only concentrates each axis on fewer terms, which is
+    what makes LSA axes readable as topics.
+    """
+    p, k = L.shape
+    R = np.eye(k)
+    d = 0.0
+    for _ in range(max_iter):
+        Lr = L @ R
+        u, s, vt = np.linalg.svd(L.T @ (Lr ** 3 - (gamma / p) * Lr @ np.diag((Lr ** 2).sum(0))))
+        R = u @ vt
+        d_old, d = d, s.sum()
+        if d_old and d / d_old < 1 + tol:
+            break
+    return R
+
+
 @dataclass
 class LSAModel:
     vectorizer: TfidfVectorizer
@@ -68,19 +90,30 @@ class LSAModel:
     terms: np.ndarray
     singular_values: np.ndarray
     explained_variance_ratio: np.ndarray
-    U: np.ndarray                 # terms x k term loadings, sign-oriented
+    U: np.ndarray                 # terms x k term loadings, (rotated,) sign-oriented
+    rotation: np.ndarray          # (k-1) x (k-1) varimax rotation of components 1..k-1
     poles: pd.DataFrame           # one row per (component, sign): label, seed hits, top terms
     doc_scores: np.ndarray        # documents x k, cosine-normalised V_k S_k
 
 
 def fit_lsa(texts: pd.Series, k: int = 20, seed: int = config.SEED,
-            min_df: int = 3) -> LSAModel:
-    """Truncated SVD of the (uncentred) TF-IDF matrix and labelling of each component pole."""
+            min_df: int = 3, rotate: bool = True) -> LSAModel:
+    """Truncated SVD of the (uncentred) TF-IDF matrix and labelling of each component pole.
+
+    With ``rotate``, components 1..k-1 are varimax-rotated (component 0, the
+    mean-document axis, is left alone). Document scores are rotated with them,
+    so Z = X U holds for the rotated loadings too.
+    """
     X, vec = build_tfidf(texts, min_df=min_df)
     k = int(min(k, min(X.shape) - 1))
     svd = TruncatedSVD(n_components=k, algorithm="randomized", n_iter=10, random_state=seed)
-    Z = svd.fit_transform(X)                     # = V_k S_k
+    Z = svd.fit_transform(X)                     # = V_k S_k = X U_k
     U = svd.components_.T.copy()                 # = U_k (terms x k)
+    R = np.eye(k - 1)
+    if rotate and k > 2:
+        R = varimax(U[:, 1:])
+        U[:, 1:] = U[:, 1:] @ R
+        Z[:, 1:] = Z[:, 1:] @ R
     # SVD signs are arbitrary: orient each axis so its largest-|loading| term is positive
     flip = np.sign(U[np.abs(U).argmax(axis=0), np.arange(k)])
     flip[flip == 0] = 1
@@ -89,8 +122,40 @@ def fit_lsa(texts: pd.Series, k: int = 20, seed: int = config.SEED,
     norms = np.sqrt(X.multiply(X).sum(axis=1)).A1
     doc_scores = Z / np.where(norms > 0, norms, 1)[:, None]
     terms = vec.get_feature_names_out()
-    return LSAModel(vec, svd, terms, svd.singular_values_, svd.explained_variance_ratio_, U,
+    return LSAModel(vec, svd, terms, svd.singular_values_, svd.explained_variance_ratio_, U, R,
                     label_poles(U, terms), doc_scores)
+
+
+def label_stability(texts: pd.Series, model: LSAModel, n_boot: int = 5, frac: float = 0.8,
+                    min_cos: float = 0.6, seed: int = config.SEED) -> pd.DataFrame:
+    """How often each labelled pole of ``model`` reappears when refitting on subsamples.
+
+    A pole "reappears" when some pole of the refitted model carries the same
+    label and its term-loading vector (on the shared vocabulary) has cosine
+    similarity >= ``min_cos`` with the original.
+    """
+    rng = np.random.default_rng(seed)
+    labelled = model.poles[~model.poles["label"].isin([OTHER, "General"])]
+    hits = np.zeros(len(labelled))
+    pos = {t: i for i, t in enumerate(model.terms)}
+    for b in range(n_boot):
+        idx = rng.choice(len(texts), int(frac * len(texts)), replace=False)
+        m = fit_lsa(texts.iloc[idx].reset_index(drop=True), k=model.U.shape[1], seed=seed + b)
+        shared = [t for t in m.terms if t in pos]
+        a_idx = [pos[t] for t in shared]
+        b_pos = {t: i for i, t in enumerate(m.terms)}
+        b_idx = [b_pos[t] for t in shared]
+        for r, (_, p) in enumerate(labelled.iterrows()):
+            u = np.maximum(p["sign"] * model.U[a_idx, p["component"]], 0)
+            best = 0.0
+            for _, q in m.poles[m.poles["label"] == p["label"]].iterrows():
+                v = np.maximum(q["sign"] * m.U[b_idx, q["component"]], 0)
+                den = np.linalg.norm(u) * np.linalg.norm(v)
+                best = max(best, float(u @ v / den) if den else 0.0)
+            hits[r] += best >= min_cos
+    out = labelled[["component", "sign", "label", "seed_share", "purity"]].copy()
+    out["stability"] = hits / n_boot
+    return out
 
 
 def label_poles(U: np.ndarray, terms: np.ndarray, n_top: int = 15,

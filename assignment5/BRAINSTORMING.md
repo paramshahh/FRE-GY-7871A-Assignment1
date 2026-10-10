@@ -103,6 +103,39 @@ Three things the textbook formula does not say, and that the implementation enfo
    signal dates. That keeps each block's autocorrelation and breaks only their alignment.
    Factors with permutation p > 0.05 are reported but not used.
 
+### 1.5 Choosing k, and rotating (decided on the real tweets)
+
+On the 5,816 filtered tweets (TF-IDF 5,816 × 20,000, 0.49% dense) the spectrum has no
+elbow. σ₁ = 10.7 is the General axis, σ₂ = 5.8, and from σ₃ ≈ 4.4 the values decay slowly.
+That is typical of short texts, so k is chosen on interpretability and stability rather
+than an energy threshold (k = 30 keeps only 8.3% of the TF-IDF energy, and that is fine:
+the rest is idiosyncratic wording).
+
+Raw SVD axes mix issues (e.g. one axis = Iran war + inflation + tariffs). A **varimax
+rotation** of components 1..k−1 (component 0 untouched) is an orthogonal rotation inside
+the same subspace. Fitted values and explained variance are unchanged, and each axis
+concentrates on fewer terms. Results:
+
+| k | labelled poles, raw | labelled poles, varimax | issues found |
+|---|---|---|---|
+| 20 | 8 / 38 | 13 / 38 | 6 |
+| **30** | 12 / 58 | **17 / 58** | **7** (adds Energy/Climate) |
+| 35 | – | – | 7 (no new issue) |
+
+**Stability.** Each labelled pole is refitted on 5 random 80% subsamples. It counts as
+reappearing if a pole with the same label has loading cosine ≥ 0.6. At k = 30, 16 of
+17 poles reappear 5/5 and Energy/Climate 3/5.
+
+**Technology/AI never forms an axis** at any k. Only 486 tweets contain a tech seed word,
+and "AI" is not a voter-salient midterm issue in this sample. The Big Tech basket is
+therefore tested against prediction-market moves and the General/Economy signals, not
+against a tech-sentiment series that the data cannot support.
+
+Two seed fixes came from inspecting the poles: "drug prices" was split between
+Healthcare Affordability ("drug") and Economy ("prices"), so `drugs`, `medications` and
+`seniors` were added to Healthcare Affordability. The "Affordable Care Act / health care"
+pole was unlabelled because `care` was not a seed.
+
 ---
 
 ## 2. Data sources: what was evaluated and what was found

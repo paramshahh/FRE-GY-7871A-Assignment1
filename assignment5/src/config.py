@@ -34,10 +34,11 @@ TOPICS: dict[str, list[str]] = {
     ],
     "Healthcare Affordability": [
         "premiums", "deductible", "deductibles", "copay", "subsidies", "aca", "obamacare",
-        "drug", "prescription", "insulin", "medical", "uninsured", "copays",
+        "drug", "drugs", "prescription", "insulin", "medical", "medications", "seniors",
+        "uninsured", "copays",
     ],
     "Healthcare": [
-        "healthcare", "medicare", "medicaid", "hospital", "hospitals", "coverage",
+        "healthcare", "care", "medicare", "medicaid", "hospital", "hospitals", "coverage",
         "insurance", "doctors", "pharma", "abortion", "vaccines", "rural",
     ],
     "Energy/Climate": [
@@ -162,6 +163,9 @@ TWITTER_FILTERS = "lang:en -is:retweet -is:reply min_faves:5 -min_faves:150"
 MIN_FOLLOWERS = 10
 MIN_VIEWS = 100
 ASTROTURF_MIN_ACCOUNTS = 5  # identical normalised text from >= this many accounts is dropped
+
+# LSA: k chosen by interpretability and stability (see BRAINSTORMING.md section 1.5)
+LSA_K = 30
 
 # Econometrics defaults
 MAX_LAGS = 5
