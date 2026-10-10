@@ -82,8 +82,9 @@ class TwitterAPIClient:
 def build_query(base: str, since: pd.Timestamp, until: pd.Timestamp) -> str:
     """Advanced-search query for [since, until) in UTC, English, no retweets."""
     fmt = "%Y-%m-%d_%H:%M:%S_UTC"
-    return (f"{base} lang:en -is:retweet "
-            f"since:{since.strftime(fmt)} until:{until.strftime(fmt)}")
+    extra = " ".join(op for op in ("lang:en", "-is:retweet") if op not in base)
+    return f"{base} {extra} since:{since.strftime(fmt)} until:{until.strftime(fmt)}".replace(
+        "  ", " ")
 
 
 def parse_tweets(raw: list[dict]) -> pd.DataFrame:
@@ -109,30 +110,116 @@ def parse_tweets(raw: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def collect_tweets(start: str, end: str, client: TwitterAPIClient | None = None,
-                   pages_per_window: int = 3, base: str = ELECTION_QUERY) -> pd.DataFrame:
-    """Backfill [start, end] in 6-hour windows, caching each day to data/raw/tweets/."""
+def session_windows(calendar: pd.DatetimeIndex) -> list[tuple]:
+    """(session, since, until) in UTC: from the previous session's 16:00 ET close to this one's."""
+    closes = (calendar + pd.Timedelta(hours=config.MARKET_CLOSE_HOUR)).tz_localize(config.TZ)
+    first = closes[0] - pd.Timedelta(days=1)
+    prev = [first] + list(closes[:-1])
+    return [(d, lo.tz_convert("UTC"), hi.tz_convert("UTC"))
+            for d, lo, hi in zip(calendar, prev, closes)]
+
+
+class CreditLedger:
+    """Append-only record of every paid call; refuses calls that would break the budget."""
+
+    def __init__(self, path=None, budget: int = config.TWITTER_BUDGET_CREDITS):
+        self.path = path or config.RAW_DIR / "tweets" / "ledger.csv"
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.budget = budget
+
+    def spent(self) -> int:
+        if not self.path.exists():
+            return 0
+        return int(pd.read_csv(self.path)["credits"].sum())
+
+    def can_spend(self, credits: int = 20 * config.CREDITS_PER_TWEET) -> bool:
+        return self.spent() + credits <= self.budget
+
+    def record(self, key: str, n_tweets: int) -> int:
+        credits = max(1, n_tweets) * config.CREDITS_PER_TWEET
+        row = pd.DataFrame([{"ts": pd.Timestamp.now(tz="UTC"), "key": key,
+                             "tweets": n_tweets, "credits": credits}])
+        row.to_csv(self.path, mode="a", header=not self.path.exists(), index=False)
+        return credits
+
+
+def account_balance(api_key: str | None = None) -> int:
+    key = api_key or os.environ.get("TWITTERAPI_IO_KEY", "")
+    r = requests.get(config.TWITTERAPI_INFO_URL, headers={"X-API-Key": key}, timeout=30)
+    r.raise_for_status()
+    return int(r.json()["recharge_credits"])
+
+
+def collect_tweets(calendar: pd.DatetimeIndex, page: int = 1,
+                   client: TwitterAPIClient | None = None,
+                   ledger: CreditLedger | None = None,
+                   query: str | None = None) -> pd.DataFrame:
+    """Fetch page ``page`` of the session query for every trading session, within budget.
+
+    Pages are cached as gzipped raw JSON (``tweets/<session>_p<page>.json.gz``) so
+    nothing is ever paid for twice; page 2 needs page 1's cursor and is skipped
+    for sessions whose page 1 said there was no next page.
+    """
+    import gzip
+    import json
+
     client = client or TwitterAPIClient()
+    ledger = ledger or CreditLedger()
+    query = query or f"{config.TWITTER_ISSUES} {config.TWITTER_CONTEXT} {config.TWITTER_FILTERS}"
     out_dir = config.RAW_DIR / "tweets"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    frames = []
-    for day in pd.date_range(start, end, freq="D", tz="UTC"):
-        path = out_dir / f"{day:%Y-%m-%d}.csv"
+    checked = 0
+    for session, lo, hi in session_windows(calendar):
+        path = out_dir / f"{session:%Y-%m-%d}_p{page}.json.gz"
         if path.exists():
-            frames.append(pd.read_csv(path, dtype={"id": str}))
             continue
-        raw = []
-        for h in range(0, 24, 6):
-            lo = day + pd.Timedelta(hours=h)
-            raw += client.search(build_query(base, lo, lo + pd.Timedelta(hours=6)),
-                                 max_pages=pages_per_window)
-        df = parse_tweets(raw)
-        df.to_csv(path, index=False)
+        cursor = ""
+        if page > 1:
+            prev = out_dir / f"{session:%Y-%m-%d}_p{page - 1}.json.gz"
+            if not prev.exists():
+                continue
+            js = json.loads(gzip.open(prev, "rt").read())
+            if not js.get("has_next_page") or not js.get("next_cursor"):
+                continue
+            cursor = js["next_cursor"]
+        if not ledger.can_spend():
+            log.warning("Budget reached (%d credits spent); stopping", ledger.spent())
+            break
+        if checked % 25 == 0:
+            bal = account_balance(client.api_key)
+            if bal - 20 * config.CREDITS_PER_TWEET < config.TWITTER_BALANCE_FLOOR:
+                log.warning("Account balance %d at floor; stopping", bal)
+                break
+        checked += 1
+        r = client.s.get(config.TWITTERAPI_URL, timeout=60, params={
+            "query": build_query(query, lo, hi), "queryType": "Top", "cursor": cursor})
+        if r.status_code == 429:
+            time.sleep(5)
+            continue
+        r.raise_for_status()
+        js = r.json()
+        n = len(js.get("tweets", []) or [])
+        ledger.record(f"{session:%Y-%m-%d}_p{page}", n)
+        with gzip.open(path, "wt") as fh:
+            json.dump(js, fh)
+        time.sleep(client.pause)
+    return load_cached_tweets()
+
+
+def load_cached_tweets() -> pd.DataFrame:
+    """Every cached page, parsed and de-duplicated, with the session it was fetched for."""
+    import gzip
+    import json
+
+    frames = []
+    for f in sorted((config.RAW_DIR / "tweets").glob("*_p*.json.gz")):
+        js = json.loads(gzip.open(f, "rt").read())
+        df = parse_tweets(js.get("tweets", []) or [])
+        df["fetch_session"] = f.name.split("_p")[0]
+        df["page"] = int(f.name.split("_p")[1].split(".")[0])
         frames.append(df)
-        log.info("%s: %d tweets", day.date(), len(df))
-    df = pd.concat(frames, ignore_index=True)
-    df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
-    return df
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True).drop_duplicates(subset=["id"])
 
 
 # ---------------------------------------------------------------------------

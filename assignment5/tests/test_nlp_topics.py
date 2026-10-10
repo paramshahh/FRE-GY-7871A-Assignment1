@@ -104,3 +104,21 @@ def test_gdelt_utc_days_roll_to_next_session_and_drop_outages():
     assert out.loc["2026-09-14", "sal_Healthcare"] == pytest.approx(0.1)
     assert np.isnan(out.loc["2026-09-16", "count_All"])   # outage day (15th) -> NaN
     assert nt.gdelt_outages(norm).sum() == 1
+
+
+def test_session_windows_close_to_close_and_weekend_rolls_to_monday():
+    cal = trading_calendar("2026-09-10", "2026-09-15")
+    w = nt.session_windows(cal)
+    mon = [x for x in w if x[0] == pd.Timestamp("2026-09-14")][0]
+    assert mon[1] == pd.Timestamp("2026-09-11 20:00", tz="UTC")   # Fri 16:00 EDT
+    assert mon[2] == pd.Timestamp("2026-09-14 20:00", tz="UTC")
+    assert all(a[2] == b[1] for a, b in zip(w, w[1:]))
+
+
+def test_ledger_enforces_budget(tmp_path):
+    led = nt.CreditLedger(tmp_path / "ledger.csv", budget=600)
+    assert led.can_spend(300)
+    led.record("d1", 20)
+    assert led.spent() == 300 and led.can_spend(300) and not led.can_spend(301)
+    led.record("d2", 0)          # an empty page still costs the 15-credit minimum
+    assert led.spent() == 315

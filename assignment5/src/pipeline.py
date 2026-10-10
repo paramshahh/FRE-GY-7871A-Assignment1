@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import pickle
 from dataclasses import dataclass, field
 
@@ -45,31 +44,18 @@ class Results:
 
 
 def load_text(start: str, end: str, refresh: bool = True) -> tuple[pd.DataFrame, dict]:
-    """Tweets (if a twitterapi.io key is set) and GDELT headlines. Raises if neither works."""
+    """Cached tweets (paid; fetched only by collect_tweets) and GDELT headlines."""
     frames, status = [], {}
-    if os.environ.get("TWITTERAPI_IO_KEY") or (config.RAW_DIR / "tweets").exists():
-        try:
-            client = nt.TwitterAPIClient() if refresh and os.environ.get("TWITTERAPI_IO_KEY") \
-                else None
-            if client is None:
-                files = sorted((config.RAW_DIR / "tweets").glob("*.csv"))
-                df = pd.concat([pd.read_csv(f, dtype={"id": str}) for f in files])
-                df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
-            else:
-                df = nt.collect_tweets(start, end, client)
-            frames.append(df)
-            status["twitter"] = f"{len(df):,} tweets"
-        except Exception as exc:
-            status["twitter"] = f"failed: {exc!r}"
+    tw = nt.load_cached_tweets()
+    if len(tw):
+        frames.append(tw)
+        status["twitter"] = f"{len(tw):,} tweets"
     else:
-        status["twitter"] = "skipped: TWITTERAPI_IO_KEY not set"
+        status["twitter"] = "no cached tweets (run collect_tweets.py)"
     try:
-        if refresh:
-            df = nt.collect_gdelt(start, end)
-        else:
-            files = sorted((config.RAW_DIR / "gdelt").glob("*.csv"))
-            df = pd.concat([pd.read_csv(f) for f in files])
-            df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
+        df = nt.collect_gdelt(start, end) if refresh else pd.concat(
+            [pd.read_csv(f) for f in sorted((config.RAW_DIR / "gdelt").glob("*.csv"))])
+        df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
         frames.append(df)
         status["gdelt"] = f"{len(df):,} headlines"
     except Exception as exc:

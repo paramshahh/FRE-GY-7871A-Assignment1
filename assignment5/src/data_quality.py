@@ -97,7 +97,8 @@ def quote_staleness(long: pd.DataFrame) -> pd.DataFrame:
     d["age_h"] = (close - pd.to_datetime(d["quote_ts"], utc=True)).dt.total_seconds() / 3600
     g = d.groupby(["venue", "chamber"])["age_h"]
     return pd.DataFrame({"days": g.size(), "median_age_h": g.median(), "p95_age_h": g.quantile(.95),
-                         "max_age_h": g.max(), "days_older_than_24h": g.apply(lambda x: (x > 24).sum())})
+                         "max_age_h": g.max(),
+                         "days_older_than_24h": g.apply(lambda x: (x > 24).sum())})
 
 
 def venue_agreement(long: pd.DataFrame, a: str = "polymarket", b: str = "kalshi",
@@ -121,7 +122,8 @@ def venue_agreement(long: pd.DataFrame, a: str = "polymarket", b: str = "kalshi"
     return pd.DataFrame(summ).set_index("chamber"), pd.DataFrame(gaps)
 
 
-def large_moves(long: pd.DataFrame, consensus: pd.DataFrame, threshold: float = 0.04) -> pd.DataFrame:
+def large_moves(long: pd.DataFrame, consensus: pd.DataFrame,
+                threshold: float = 0.04) -> pd.DataFrame:
     """Consensus moves above ``threshold`` and whether each venue moved the same way."""
     wide = long.pivot_table(index="date", columns=["chamber", "venue"], values="prob_dem")
     rows = []

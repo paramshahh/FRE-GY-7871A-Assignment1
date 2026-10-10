@@ -106,7 +106,8 @@ GDELT_TOPIC_TERMS = {
     "Housing Affordability": ('(mortgage OR "mortgage rates" OR "home prices" OR "housing costs" '
                               'OR homebuyers OR "housing affordability" OR rent)'),
     "Healthcare Affordability": ('("health insurance premiums" OR "drug prices" OR "ACA subsidies" '
-                                 'OR "health care costs" OR "out-of-pocket" OR "prescription drug")'),
+                                 'OR "health care costs" OR "out-of-pocket" '
+                                 'OR "prescription drug")'),
     "Healthcare": '(healthcare OR medicare OR medicaid OR hospitals OR "health coverage")',
     "Energy/Climate": '(energy OR climate OR oil OR gasoline OR renewable OR electricity)',
     "Immigration": '(immigration OR border OR migrants OR deportation OR asylum)',
@@ -119,6 +120,21 @@ GDELT_FILTERS = "sourcecountry:US sourcelang:english"
 # Social media quality filters (bot and astroturf screening).
 # ---------------------------------------------------------------------------
 TWITTERAPI_URL = "https://api.twitterapi.io/twitter/tweet/advanced_search"
+TWITTERAPI_INFO_URL = "https://api.twitterapi.io/oapi/my/info"
+# Credit budget: 15 credits per returned tweet (minimum 15 per call). The ledger in
+# data/raw/tweets/ledger.csv is the authority, since the account balance updates late.
+TWITTER_BUDGET_CREDITS = int(os.environ.get("TWITTER_BUDGET_CREDITS", 100_000))
+TWITTER_BALANCE_FLOOR = int(os.environ.get("TWITTER_BALANCE_FLOOR", 15_000))
+CREDITS_PER_TWEET = 15
+# Issue terms OR political context, English originals with some engagement but not viral
+# (a band that favours ordinary voters over national accounts), sorted by relevance.
+# (the API rejects queries over 512 characters, dates and filters included)
+TWITTER_ISSUES = ('(inflation OR "grocery prices" OR tariffs OR mortgage OR "home prices" OR '
+                  'rent OR premiums OR "drug prices" OR obamacare OR medicaid OR medicare OR '
+                  'energy OR climate OR border OR immigration OR deportation OR ukraine OR '
+                  'china OR military OR "artificial intelligence")')
+TWITTER_CONTEXT = '(midterms OR midterm OR congress OR democrats OR republicans OR GOP OR ballot)'
+TWITTER_FILTERS = "lang:en -is:retweet -is:reply min_faves:5 -min_faves:150"
 MIN_FOLLOWERS = 10
 MIN_VIEWS = 100
 ASTROTURF_MIN_ACCOUNTS = 5  # identical normalised text from >= this many accounts is dropped
