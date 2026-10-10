@@ -148,6 +148,16 @@ with tabs[2]:
     st.plotly_chart(px.line(R.daily.emotions[emo][picks].rolling(5, min_periods=2).mean(),
                             title=f"Loading-weighted share of {emo}"), width="stretch")
     st.dataframe(R.tables["table1b_issue_sentiment"])
+    st.subheader("News salience check (GDELT)")
+    if len(getattr(R, "salience_validation", pd.DataFrame())):
+        st.write("Does X discourse track the news agenda? (5-session means)")
+        st.dataframe(R.salience_validation.round(3))
+        st.write("GDELT news salience / tone → ΔProb (Table 2B)")
+        st.dataframe(R.tables.get("table2b_news_salience"))
+        st.caption("Series availability")
+        st.dataframe(R.news_status)
+    else:
+        st.info("No GDELT issue series in this run.")
 
 with tabs[3]:
     stat = st.radio("Statistic", ["q_value", "p_value"], horizontal=True)

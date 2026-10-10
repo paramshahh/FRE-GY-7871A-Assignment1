@@ -170,6 +170,27 @@ def make_figures(R: Results) -> dict[str, Path]:
 # ---------------------------------------------------------------------------
 # Findings, generated from the numbers
 # ---------------------------------------------------------------------------
+def news_finding(R: Results) -> str:
+    """One paragraph on the GDELT news-salience check, generated from the numbers."""
+    nt_, val, st = R.news_tests, R.salience_validation, R.news_status
+    if not len(nt_):
+        return "<b>News check.</b> No GDELT issue series were available."
+    missing = [i for i, r in st.iterrows() if not r.all()]
+    txt = (f"<b>News check (GDELT).</b> {int((nt_['q_value'] < 0.10).sum())} of {len(nt_)} "
+           "tests of per-issue news salience and news tone on ΔProb survive FDR at 10% "
+           f"(smallest q = {nt_['q_value'].min():.2f}).")
+    if len(val):
+        v = val.set_index("issue")
+        txt += (" X discourse tracks the news agenda most closely for "
+                + ", ".join(f"{i} (ρ = {r.corr_levels:.2f})" for i, r in
+                            v.sort_values("corr_levels", ascending=False).head(3).iterrows())
+                + f"; the median level correlation across issues is "
+                f"{v['corr_levels'].median():.2f}.")
+    if missing:
+        txt += " Series not available from GDELT: " + ", ".join(missing) + "."
+    return txt
+
+
 def findings(R: Results) -> list[str]:
     s1, s2, s2v = R.stage1, R.stage2_ret, R.stage2_vol
     oos = R.factor_oos
@@ -186,6 +207,7 @@ def findings(R: Results) -> list[str]:
            f"{oos['oos_corr'].iloc[0]:+.2f} (t = {oos['oos_t'].iloc[0]:+.1f}), the opposite "
            "sign to its training fit, which is what over-fitting looks like." if len(oos)
            else "."),
+        news_finding(R),
         f"<b>Stage 2 (election odds → assets).</b> {int((s2['q_value'] < 0.10).sum())} of "
         f"{len(s2)} excess-return tests and {int((s2v['q_value'] < 0.10).sum())} of {len(s2v)} "
         "volatility tests survive FDR at 10%.",
@@ -394,7 +416,21 @@ def build_pdf(R: Results, figs: dict[str, Path]) -> None:
                   R.factor_oos.set_index("factor"))),
               Paragraph(f"Estimated on sessions up to {R.cov_svd.train_end.date()}; the "
                         "out-of-sample statistics use the remaining sessions only.", small),
-              img(figs["covsvd"])]
+              img(figs["covsvd"]),
+              PageBreak(), Paragraph("News salience check (GDELT)", h1),
+              Paragraph("<b>Does X discourse track the news agenda?</b> Correlation of X issue "
+                        "salience (general stratum) with GDELT's share of midterm coverage "
+                        "mentioning the issue, 5-session means.", body),
+              tbl(R.salience_validation.set_index("issue") if len(R.salience_validation)
+                  else pd.DataFrame({"note": ["no GDELT issue series"]})),
+              Paragraph("<b>Table 2B.</b> Granger causality tests (GDELT news salience and "
+                        "tone → ΔProb)", body),
+              tbl(R.tables["table2b_news_salience"]),
+              Paragraph("Same specification and FDR as Table 2. GDELT outage sessions are "
+                        "missing, not zero, and drop out. Availability of each GDELT series: "
+                        + ", ".join(f"{i} ({'counts' if r.news_counts else 'no counts'}, "
+                                    f"{'tone' if r.news_tone else 'no tone'})"
+                                    for i, r in R.news_status.iterrows()) + ".", small)]
     t3 = R.tables["table3_basket_reactivity"]
     rob = R.robustness
     story += [PageBreak(), Paragraph("Stage 2: prediction markets → midterm basket", h1),
@@ -469,6 +505,10 @@ def build_notebook() -> None:
              "cs.p_values.round(3), 'trained to', cs.train_end.date())\n"
              "display(cs.U.round(2))\ndisplay(R.factor_oos.round(3))\n"
              "display(Image('outputs/figures/fig6_covariance_svd.png'))"),
+        md("## 6b. News salience check (GDELT, Table 2B)\nDoes X discourse track the news "
+           "agenda, and does news salience or tone lead the election odds?"),
+        code("display(R.news_status)\ndisplay(R.salience_validation.round(3))\n"
+             "display(Markdown(tg.to_markdown(R.tables['table2b_news_salience'])))"),
         md("## 7. Stage 2: prediction markets → midterm basket (Table 3) and robustness"),
         code("display(Markdown(tg.to_markdown(R.tables['table3_basket_reactivity'])))\n"
              "display(R.robustness.round(4))\n"

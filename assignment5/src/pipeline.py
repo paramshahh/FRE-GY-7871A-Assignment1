@@ -54,6 +54,9 @@ class Results:
     robustness: pd.DataFrame       # battery for every test with q < 0.10
     sentiment_to_asset: pd.DataFrame
     rigobon_sack: pd.DataFrame
+    news_tests: pd.DataFrame = field(default_factory=pd.DataFrame)          # GDELT -> dProb
+    salience_validation: pd.DataFrame = field(default_factory=pd.DataFrame)  # X vs news agenda
+    news_status: pd.DataFrame = field(default_factory=pd.DataFrame)         # which series exist
     tables: dict = field(default_factory=dict)
     params: dict = field(default_factory=dict)
 
@@ -77,6 +80,45 @@ def load_news(calendar: pd.DatetimeIndex, refresh: bool,
     vol = news["count_All"].where(news["outage_days"] == 0)
     high = (vol > vol.quantile(quantile)).astype(float).where(vol.notna()).rename("high_news")
     return news, high
+
+
+def news_salience_check(news: pd.DataFrame, daily: lsa.DailyLSA, dprob: pd.DataFrame,
+                        controls: pd.DataFrame, lags, cov: str
+                        ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """GDELT per-issue news salience and tone as an independent check on Stage 1.
+
+    * Validation: does X's issue salience (general stratum, 5-session mean) track the
+      news agenda (GDELT share of midterm coverage mentioning the issue, 5-session
+      mean)? Correlations in levels and in 5-session changes.
+    * Tests: Granger F-tests of news salience and news tone per issue on dProb, with the
+      same controls and BH-FDR as Table 2. GDELT outage sessions are missing, not zero,
+      so they drop out of the regressions.
+    Issues whose GDELT series never downloaded are listed in the status table.
+    """
+    issues = list(config.GDELT_TOPIC_TERMS)
+    status = pd.DataFrame({"news_counts": [f"count_{k}" in news for k in issues],
+                           "news_tone": [f"tone_{k}" in news for k in issues]}, index=issues)
+    status.index.name = "issue"
+    have_sal = [k for k in issues if f"sal_{k}" in news]
+    have_tone = [k for k in issues if f"tone_{k}" in news]
+    causes = pd.concat([news[[f"sal_{k}" for k in have_sal]].set_axis(
+        [f"news_sal_{k}" for k in have_sal], axis=1),
+        news[[f"tone_{k}" for k in have_tone]].set_axis(
+        [f"news_tone_{k}" for k in have_tone], axis=1)], axis=1)
+    tests = ge.granger_matrix(causes, dprob.add_prefix("dProb_"), lags=lags,
+                              controls=controls, cov=cov) if causes.shape[1] else pd.DataFrame()
+    rows = []
+    for k in have_sal:
+        if k not in daily.salience:
+            continue
+        x = daily.salience[k].rolling(5, min_periods=3).mean()
+        g = news[f"sal_{k}"].rolling(5, min_periods=3).mean()
+        j = pd.concat([x.rename("x"), g.rename("news")], axis=1).dropna()
+        dj = j.diff(5).dropna()
+        rows.append({"issue": k, "sessions": len(j), "corr_levels": j["x"].corr(j["news"]),
+                     "corr_5d_changes": dj["x"].corr(dj["news"]),
+                     "x_mean_salience": j["x"].mean(), "news_mean_salience": j["news"].mean()})
+    return tests, pd.DataFrame(rows), status
 
 
 def _tests(causes, effects, controls, lags, cov, prefix_c="", prefix_e=""):
@@ -165,11 +207,25 @@ def run_pipeline(refresh: bool = False, k: int = config.LSA_K, lags: str | int =
                 log.warning("RS %s/%s failed: %s", asset, ch, exc)
     rs = pd.DataFrame(rs_rows)
 
+    # --- GDELT news salience check ------------------------------------------------------
+    news_tests, sal_val, news_status = news_salience_check(news, daily, dprob, controls,
+                                                           lags, cov)
+    if len(news_tests):
+        npanel = pd.concat([news.filter(regex="^(sal|tone)_").rename(
+            columns=lambda c: "news_" + c), dprob.add_prefix("dProb_")], axis=1)
+        extra = [{"stage": "1 news", **ge.granger_robustness(
+            npanel[r["effect"]], npanel[r["cause"]], controls, int(r["lags"]),
+            exclude=["2026-06-05"])}
+            for _, r in news_tests[news_tests["q_value"] < 0.10].iterrows()]
+        if extra:
+            robustness = pd.concat([robustness, pd.DataFrame(extra)], ignore_index=True)
+
     # --- tables -----------------------------------------------------------------------
     t1a = tg.table1_loadings(model, stability)
     t1b = tg.table1_issues(daily, S, coverage)
     t2 = tg.table2_stage1(stage1, reverse, stage1_rob)
     t3 = tg.table3_basket(stage2_ret, stage2_vol, rs)
+    t2b = tg.table2b_news(news_tests)
     tables = {
         "table1a_svd_topics": (t1a, "Table 1A: SVD latent topics and term loadings (U_k)",
                                "Varimax-rotated LSA, k = 30, uncentred TF-IDF. Each row is one "
@@ -185,6 +241,11 @@ def run_pipeline(refresh: bool = False, k: int = config.LSA_K, lags: str | int =
                                   f"HC1 F-tests, lags by {str(lags).upper()}, lagged SPY, VIX "
                                   "and 2Y controls. q: Benjamini-Hochberg FDR across the table. "
                                   "p (3d): 3-session pooled sentiment. p (rev): dProb -> S."),
+        "table2b_news_salience": (t2b, "Table 2B: Granger causality, GDELT news salience and "
+                                  "tone to prediction-market probabilities",
+                                  "News salience = share of GDELT midterm coverage mentioning "
+                                  "the issue; tone = GDELT average tone. Same specification and "
+                                  "FDR as Table 2; GDELT outage sessions excluded."),
         "table3_basket_reactivity": (t3, "Table 3: Midterm basket reactivity to prediction-"
                                      "market shifts",
                                      "Ret/Vol: Granger F-tests of dProb lags on excess returns "
@@ -195,7 +256,7 @@ def run_pipeline(refresh: bool = False, k: int = config.LSA_K, lags: str | int =
     res = Results(market, pm, frep, model, stability, spectrum, comparison, daily, S, S_rob,
                   coverage, news, high, adf, lag_table, cs, f_tests, f_oos, stage1, stage1_rob,
                   reverse, stage1_sal, stage2_ret, stage2_vol, robustness, s2a, rs,
-                  {k_: v[0] for k_, v in tables.items()},
+                  news_tests, sal_val, news_status, {k_: v[0] for k_, v in tables.items()},
                   {"start": config.START, "end": config.END, "k": k, "lags": lags, "cov": cov,
                    "high_quantile": high_quantile, "n_tweets": len(tweets),
                    "built": pd.Timestamp.now(tz=config.TZ).isoformat()})

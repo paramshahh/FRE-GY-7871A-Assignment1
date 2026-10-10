@@ -127,6 +127,21 @@ def table2_stage1(stage1: pd.DataFrame, reverse: pd.DataFrame | None = None,
     return out.set_index(["Issue", "Contract"]).sort_index()
 
 
+def table2b_news(tests: pd.DataFrame) -> pd.DataFrame:
+    """GDELT news salience / tone -> dProb, in the layout of Table 2."""
+    if tests is None or not len(tests):
+        return pd.DataFrame({"note": ["no GDELT issue series available"]})
+    kind = np.where(tests["cause"].str.startswith("news_sal_"), "salience", "tone")
+    issue = tests["cause"].str.replace("news_sal_", "", regex=False) \
+        .str.replace("news_tone_", "", regex=False)
+    out = pd.DataFrame({"Issue": issue, "Series": kind,
+                        "Contract": tests["effect"].str.replace("dProb_", "", regex=False),
+                        "Lags": tests["lags"], "N": tests["nobs"], "F": tests["F"],
+                        "p": tests["p_value"], "q (BH)": tests["q_value"],
+                        "Sig.": tests["p_value"].map(stars), "Σγ": tests["sum_gamma"]})
+    return out.set_index(["Issue", "Series", "Contract"]).sort_index()
+
+
 def table3_basket(stage2_ret: pd.DataFrame, stage2_vol: pd.DataFrame,
                   rs: pd.DataFrame) -> pd.DataFrame:
     """Basket reactivity: dProb -> excess returns and volatility, plus Rigobon-Sack betas."""
