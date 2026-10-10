@@ -283,3 +283,84 @@ def event_study(excess: pd.DataFrame, dprob: pd.Series, n_events: int = 10,
     out = pd.concat(rows).groupby(level=0).mean()
     out.index.name = "day"
     return out
+
+
+# ---------------------------------------------------------------------------
+# Out-of-sample check of covariance-SVD factors
+# ---------------------------------------------------------------------------
+def factor_oos(factors: pd.DataFrame, V: pd.DataFrame, targets: pd.DataFrame,
+               train_end: pd.Timestamp, lag: int = 1) -> pd.DataFrame:
+    """Does factor f_{t-lag} predict its target portfolio p_t = z(y_t) . v after ``train_end``?
+
+    Targets are standardised with training-window moments (as in the SVD), the
+    portfolio weights V come from the training window, and only dates after
+    ``train_end`` are scored, so nothing here was seen during estimation.
+    Reports the out-of-sample correlation, its t-stat, the hit rate of
+    sign(f) == sign(p), and the share of individual targets with the
+    sign the training window predicts.
+    """
+    tr = targets.loc[:train_end]
+    z = (targets - tr.mean()) / tr.std().replace(0, 1)
+    rows = []
+    for c in factors.columns:
+        f = factors[c].shift(lag)
+        p = z[V.index] @ V[c]
+        j = pd.concat([f.rename("f"), p.rename("p")], axis=1).loc[train_end:].iloc[1:].dropna()
+        if len(j) < 10:
+            continue
+        r = j["f"].corr(j["p"])
+        t = r * np.sqrt((len(j) - 2) / max(1e-12, 1 - r ** 2))
+        hits = (np.sign(j["f"]) == np.sign(j["p"])).mean()
+        per = []
+        for y in V.index:
+            jj = pd.concat([f, z[y]], axis=1).loc[train_end:].iloc[1:].dropna()
+            per.append(np.sign(jj.iloc[:, 0].corr(jj.iloc[:, 1])) == np.sign(V.loc[y, c]))
+        rows.append({"factor": c, "oos_days": len(j), "oos_corr": r, "oos_t": t,
+                     "sign_hit_rate": hits, "targets_right_sign": float(np.mean(per))})
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Robustness battery for the tests that survive the FDR correction
+# ---------------------------------------------------------------------------
+def granger_robustness(y: pd.Series, x: pd.Series, controls: pd.DataFrame | None = None,
+                       lags: int = 1, n_extreme: int = 5,
+                       exclude: list[str] | None = None) -> dict:
+    """Re-run one Granger test under the checks a surviving result must pass.
+
+    * HAC (Newey-West) instead of HC1 standard errors;
+    * without the ``n_extreme`` largest |x| days (and the day after each), so a
+      handful of jumps cannot carry the result;
+    * without listed dates (e.g. a market-wide crash day);
+    * in each half of the sample, which must agree in sign;
+    * placebo: x_{t+1} in place of x_{t-1}, which must not "predict" y_t.
+
+    ``robust`` is True when every variant has p < 0.10 with the full-sample
+    sign (halves: same sign, at least one half p < 0.10) and the placebo is not
+    strongly significant (p > 0.01). The placebo is there to catch look-ahead or a
+    shared trend, which show up as strong significance; at the 10% level it would
+    fail one genuine result in ten by chance.
+    """
+    base = granger_f(y, x, lags, controls, cov="HC1")
+    hac = granger_f(y, x, lags, controls, cov="HAC")
+    big = x.abs().nlargest(n_extreme).index
+    keep = ~x.index.isin(big) & ~x.index.isin(big + pd.offsets.BDay(1))
+    drop = granger_f(y.where(keep), x.where(keep), lags, controls, cov="HC1")
+    ex = pd.DatetimeIndex(pd.to_datetime(exclude or []))
+    excl = granger_f(y.where(~y.index.isin(ex)), x, lags, controls, cov="HC1")
+    h = len(x) // 2
+    c1 = controls.iloc[:h] if controls is not None else None
+    c2 = controls.iloc[h:] if controls is not None else None
+    first = granger_f(y.iloc[:h], x.iloc[:h], lags, c1, cov="HC1")
+    second = granger_f(y.iloc[h:], x.iloc[h:], lags, c2, cov="HC1")
+    placebo = granger_f(y, x.shift(-(lags + 1)).rename(x.name), lags, controls, cov="HC1")
+    sgn = np.sign(base.sum_gamma)
+    halves_ok = (np.sign(first.sum_gamma) == sgn and np.sign(second.sum_gamma) == sgn
+                 and min(first.p_value, second.p_value) < 0.10)
+    variants_ok = all(r.p_value < 0.10 and np.sign(r.sum_gamma) == sgn for r in (hac, drop, excl))
+    return {"cause": x.name, "effect": y.name, "sum_gamma": base.sum_gamma,
+            "p": base.p_value, "p_HAC": hac.p_value, "p_no_extremes": drop.p_value,
+            "p_excl_dates": excl.p_value, "p_1st_half": first.p_value,
+            "gamma_1st_half": first.sum_gamma, "p_2nd_half": second.p_value,
+            "gamma_2nd_half": second.sum_gamma, "p_placebo": placebo.p_value,
+            "robust": bool(variants_ok and halves_ok and placebo.p_value > 0.01)}

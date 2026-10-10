@@ -81,8 +81,12 @@ def main() -> None:
                   "with the same exposure from other issuers instead."),
           section("Days a fund diverges from its sibling by > 6 robust SD", sib_flags),
           section("SPY vs the S&P 500 index (FRED SP500)", idx_check,
-                  "On 2026-06-26 the index prints -4.7bp while SPY, IVV and VOO (three "
-                  "issuers) all fall 73-86bp: the index close is stale, the ETF data is right."),
+                  "25 Jun - 1 Jul 2026: the index (FRED and Yahoo ^GSPC, one upstream source) "
+                  "and the three S&P 500 trackers SPY, IVV, VOO disagree by 15-30bp a day, "
+                  "while agreeing on the week's total (+155 to +170bp). Daily closes that week "
+                  "are mistimed in at least one feed. Sensitivity: replacing SPY with the "
+                  "median of SPY/IVV/VOO (mean change 0.9bp) or dropping 24 Jun - 2 Jul leaves "
+                  "every Stage 2 result's sign and significance unchanged (see the report)."),
           section("SPY vs index divergence days", idx_flags),
           section("FRED yields", dq.fred_checks(fred.loc[config.START:config.END])),
           "## 2. Prediction markets\n\n",

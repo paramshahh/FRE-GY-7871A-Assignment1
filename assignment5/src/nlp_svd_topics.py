@@ -243,7 +243,12 @@ class DailyLSA:
     salience: pd.DataFrame    # date x issue: share of issue loading in that day's projection
     sentiment: pd.DataFrame   # date x issue: S_k,t = (Pos - Neg) / Total, loading-weighted
     mass: pd.DataFrame        # date x issue: Total_k,t (sum of loading weights)
+    pos_mass: pd.DataFrame    # date x issue: Pos_k,t
+    neg_mass: pd.DataFrame    # date x issue: Neg_k,t
+    unit_mass: pd.Series      # issue -> mean loading weight of a document dominated by it
+    emotions: dict            # emotion -> date x issue, loading-weighted share of documents
     n_docs: pd.Series
+    docs: pd.DataFrame        # per document: session, dominant topic, polarities, emotions
 
 
 def daily_projection(model: LSAModel, texts: pd.Series, created_at: pd.Series,
@@ -263,31 +268,92 @@ def daily_projection(model: LSAModel, texts: pd.Series, created_at: pd.Series,
 
 
 def daily_sentiment(model: LSAModel, docs: pd.DataFrame, calendar: pd.DatetimeIndex,
-                    scorer: ToneScorer | None = None) -> DailyLSA:
+                    scorer: ToneScorer | None = None,
+                    salience_mask: pd.Series | np.ndarray | None = None) -> DailyLSA:
     """Loading-weighted, topic-conditioned sentiment and salience per trading day.
 
     ``docs`` needs ``text`` and ``created_at`` and must be the documents the model
     was fitted on, in the same order. Each document is scored with the lexicon of
     its dominant issue, then contributes to every issue in proportion to its
     loading on that issue:  Pos_k,t = sum_d w_dk 1[pol_d > 0], etc.
+
+    ``salience_mask`` restricts the documents used for salience (e.g. the general
+    stratum only, when another stratum deliberately oversamples some issues);
+    sentiment always uses every document.
     """
+    from .nlp_topics import EMOTIONS, emotion_flags, normalise
+
     scorer = scorer or ToneScorer()
     W = topic_weights(model)
-    dom = dominant_topic(W)
-    pol = np.array([scorer.polarity(scorer.compound(t, k))
-                    for t, k in zip(docs["text"].values, dom.values)])
-    day = to_trading_day(docs["created_at"].reset_index(drop=True), calendar)
     W.index = range(len(W))
-    pos = W.mul(pol > 0, axis=0).groupby(day.values).sum()
-    neg = W.mul(pol < 0, axis=0).groupby(day.values).sum()
-    tot = W.groupby(day.values).sum()
+    dom = dominant_topic(W)
+    texts = docs["text"].reset_index(drop=True)
+    comp = np.array([scorer.compound(t, k) for t, k in zip(texts, dom.values)])
+    comp_g = np.array([scorer.compound(t) for t in texts])
+    pol = np.array([scorer.polarity(c) for c in comp])
+    day = to_trading_day(docs["created_at"].reset_index(drop=True), calendar)
+    g = day.values
+    pos = W.mul(pol > 0, axis=0).groupby(g).sum()
+    neg = W.mul(pol < 0, axis=0).groupby(g).sum()
+    tot = W.groupby(g).sum()
     sent = ((pos - neg) / tot.replace(0, np.nan)).reindex(calendar)
-    sal = tot.div(tot.sum(axis=1).replace(0, np.nan), axis=0).reindex(calendar)
-    n = pd.Series(1, index=range(len(W))).groupby(day.values).sum().reindex(calendar, fill_value=0)
-    beta = daily_projection(model, docs["text"], docs["created_at"], calendar)
-    for f in (sent, sal):
+    mask = np.ones(len(W), bool) if salience_mask is None else np.asarray(salience_mask, bool)
+    tot_s = W[mask].groupby(g[mask]).sum()
+    sal = tot_s.div(tot_s.sum(axis=1).replace(0, np.nan), axis=0).reindex(calendar)
+    emo_flags = pd.DataFrame([emotion_flags(normalise(t)) for t in texts])
+    emotions = {e: (W.mul(emo_flags[e], axis=0).groupby(g).sum() / tot.replace(0, np.nan))
+                .reindex(calendar) for e in EMOTIONS}
+    n = pd.Series(1, index=range(len(W))).groupby(g).sum().reindex(calendar, fill_value=0)
+    beta = daily_projection(model, texts, docs["created_at"].reset_index(drop=True), calendar)
+    for f in (sent, sal, *emotions.values()):
         f.index.name = "date"
-    return DailyLSA(beta, sal, sent, tot.reindex(calendar), n)
+    doc_out = pd.DataFrame({"session": day.values, "topic": dom.values, "compound": comp,
+                            "polarity": pol, "polarity_generic": [scorer.polarity(c)
+                                                                  for c in comp_g]})
+    doc_out = pd.concat([doc_out, emo_flags], axis=1)
+    unit = pd.Series({k: W.loc[dom == k, k].mean() if (dom == k).any() else np.nan
+                      for k in W.columns})
+    return DailyLSA(beta, sal, sent, tot.reindex(calendar), pos.reindex(calendar),
+                    neg.reindex(calendar), unit, emotions, n, doc_out)
+
+
+def pooled_sentiment(daily: DailyLSA, window: int = 5,
+                     min_eff_docs: float = 5.0) -> pd.DataFrame:
+    """Trailing ``window``-session sentiment from pooled masses; NaN where evidence is thin.
+
+    S_k,t = sum_{s=t-w+1..t} (Pos_k,s - Neg_k,s) / sum Total_k,s. Pooling the masses
+    (rather than averaging daily ratios) stops a session in which an issue gets a
+    sliver of loading from one document from reading as a unanimous +/-1. The
+    evidence threshold is in *effective documents* (pooled mass / the issue's
+    typical per-document mass), so issues with diffuse vocabularies are not
+    penalised. Only sessions up to t are used.
+    """
+    pos = daily.pos_mass.fillna(0).rolling(window, min_periods=1).sum()
+    neg = daily.neg_mass.fillna(0).rolling(window, min_periods=1).sum()
+    tot = daily.mass.fillna(0).rolling(window, min_periods=1).sum()
+    eff = tot / daily.unit_mass.reindex(tot.columns)
+    out = (pos - neg) / tot.where(eff >= min_eff_docs)
+    out.index.name = "date"
+    return out
+
+
+def sentiment_signals(daily: DailyLSA, window: int = 5, min_eff_docs: float = 5.0,
+                      max_ffill: int = 3, min_coverage: float = 0.8
+                      ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Complete S_k,t series for the econometrics, plus a coverage report.
+
+    Gaps are filled only with past information: the last valid reading (at most
+    ``max_ffill`` sessions old), then the expanding mean to date. Issues whose
+    raw coverage is below ``min_coverage`` are dropped and reported.
+    """
+    raw = pooled_sentiment(daily, window, min_eff_docs)
+    cov = raw.notna().mean()
+    rep = pd.DataFrame({"coverage": cov, "used": cov >= min_coverage,
+                        "unit_mass": daily.unit_mass.reindex(cov.index)})
+    keep = cov.index[cov >= min_coverage]
+    s = raw[keep].ffill(limit=max_ffill)
+    s = s.fillna(raw[keep].expanding().mean().shift(1)).fillna(raw[keep].mean())
+    return s, rep
 
 
 # ---------------------------------------------------------------------------

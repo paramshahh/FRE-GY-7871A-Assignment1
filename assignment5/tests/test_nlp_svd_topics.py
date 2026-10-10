@@ -97,3 +97,30 @@ def test_covariance_svd_finds_planted_factor_without_lookahead():
     assert cs.p_values[0] < 0.01 and cs.p_values[1] > 0.05
     assert cs.train_end < idx[int(0.61 * T)]
     assert cs.factors.shape == (T, 2)
+
+
+def _toy_daily():
+    cal = trading_calendar("2026-09-01", "2026-09-30")
+    z = pd.DataFrame(0.0, index=cal, columns=["A"])
+    pos, neg, tot = z.copy(), z.copy(), z.copy()
+    pos.iloc[0], tot.iloc[0] = 0.10, 0.10          # one thin positive day
+    neg.iloc[5:10], tot.iloc[5:10] = 0.2, 0.4      # a week of mixed/negative evidence
+    return lsa.DailyLSA(None, None, None, tot, pos, neg, pd.Series({"A": 0.05}), {}, None, None)
+
+
+def test_pooled_sentiment_pools_masses_and_drops_thin_windows():
+    d = _toy_daily()
+    s = lsa.pooled_sentiment(d, window=5, min_eff_docs=5)
+    assert np.isnan(s["A"].iloc[0])                 # 0.10 mass = 2 effective docs < 5
+    assert s["A"].iloc[9] == pytest.approx(-1.0 / 2.0)   # sum(-0.2*5) / sum(0.4*5)
+    assert s["A"].iloc[6] == pytest.approx(-0.4 / 0.8)
+
+
+def test_sentiment_signals_fill_only_from_the_past():
+    d = _toy_daily()
+    s, rep = lsa.sentiment_signals(d, window=5, min_eff_docs=5, min_coverage=0.0)
+    raw = lsa.pooled_sentiment(d, 5, 5)
+    first = raw["A"].first_valid_index()
+    assert s.loc[first:, "A"].notna().all()
+    assert (s.loc[first:, "A"] <= 0).all()          # never filled with a later positive value
+    assert rep.loc["A", "coverage"] == pytest.approx(raw["A"].notna().mean())

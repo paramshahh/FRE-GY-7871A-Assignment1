@@ -1,0 +1,61 @@
+component,sign,label,seed_share,purity,top_terms,stability
+0,1,General,0.07134620855995201,0.36101049956625275,"trump, republicans, health, democrats, congress, people, insurance, costs, care, americans, tax, prices, health insurance, families, war",
+0,-1,General,0.0,0.0,,
+1,1,Other,0.08731257586517766,0.8748416884309377,"tax, credits, tax credits, aca tax, cuts, tax cuts, billionaires, credits expire, aca, premiums, extend, taxes, expire, tax breaks, extend aca",
+1,-1,Other,0.20062240024047268,0.5861910031997098,"subsidies, aca subsidies, people, medicare, lost, congress, big, don, healthcare, care, party, midterms, donald trump, donald, change",
+2,1,Housing Affordability,0.6045273698124216,0.9912023073399362,"housing, housing costs, costs, lower, lower housing, bipartisan, sign, housing act, road housing, homes, affordability, road, st century, lower costs, supply",1.0
+2,-1,Other,0.05989748805873092,0.25122968114030514,"military, million, house, energy, america, obamacare, inflation, fraud, premiums, president trump, protect, working, biden, state, groceries",
+3,1,Foreign Policy/Defense,0.7859407174788599,0.9433009950583545,"war, iran, war iran, iran war, military, billion, war powers, illegal, illegal war, powers, military action, oil, powers resolution, resolution, fund",1.0
+3,-1,Other,0.027142054707772856,0.21822981894169702,"house, senate, million, federal, people, white house, white, administration, big, house senate, groceries, biden, coverage, border, president trump",
+4,1,Immigration,0.6436374366065382,0.9934007694348885,"border, ice, border patrol, patrol, ice border, fund, dhs, secure, funding, border security, security, tsa, open, open border, communities",1.0
+4,-1,Other,0.08146430351880626,0.393940731769492,"house, fraud, military, obamacare, state, bills, house republicans, white, party, white house, medicare, israel, aid, war, rent",
+5,1,Healthcare,0.7162918270172398,0.9887702037358813,"health insurance, insurance, health, insurance premiums, insurance companies, insurance costs, insurance republicans, companies, private health, insurance expensive, private, expensive, lost health, lose health, congress",1.0
+5,-1,Other,0.07405693509046574,0.3037122098338919,"care, american, people, military, house, medicaid, rent, obamacare, vote, lower, aca, affordable, families, american people, trump",
+6,1,Economy/Inflation,0.7384457759540647,0.9282495682498988,"gas, prices, gas prices, grocery, groceries, grocery prices, high, inflation, rent, groceries rent, food, energy, expensive, high gas, gas groceries",1.0
+6,-1,Other,0.061356668496076676,0.3016877294956549,"president, president trump, obamacare, ballot, rent control, control, medicare, mortgage, military, working, fight, property, massachusetts, government, let",
+7,1,Healthcare Affordability,0.6844218766386921,0.6455819558716369,"drug, drug prices, prices, prescription, prescription drug, lower, medicare, drugs, lower drug, lower prescription, seniors, drug costs, president trump, negotiate, prescription drugs",1.0
+7,-1,Other,0.15917025929586306,0.4571364937425122,"groceries, security, gas, energy, obamacare, housing, donald, donald trump, groceries rent, rent, military, afford, gas groceries, national, people",
+8,1,Healthcare,0.4100594139193765,0.9383792547368182,"medicaid, cuts, cut, medicaid cuts, big, tax cuts, big beautiful, beautiful, trillion, hospitals, cut medicaid, medicare, tax, snap, billionaires",1.0
+8,-1,Other,0.1167992188448467,0.49646612231277715,"credits, tax credits, premiums, aca tax, costs, senate, american, extend, let, groceries, lower, credits expire, afford, obamacare, paying",
+9,1,Healthcare,0.5483821096109283,0.7092792208076824,"healthcare, premiums, obamacare, costs, healthcare costs, medicare, affordable, healthcare premiums, care act, coverage, affordable care, rising, skyrocketing, access, people",1.0
+9,-1,Other,0.08316476238537411,0.3692470087178617,"house, health care, home, cut, housing, taxes, homes, energy, mortgage, health, president trump, property, aca subsidies, senate, help",
+10,1,Healthcare,0.7932040972405733,0.971678567603532,"care, health care, health, affordable, care costs, affordable care, care act, care premiums, access, premiums, care crisis, affordable health, obamacare, care cuts, minnesota",1.0
+10,-1,Healthcare,0.23312069843813726,0.705820656140136,"healthcare, insurance, health insurance, house, america, housing, let, subsidies, government, tax, taxes, president trump, save, money, president",1.0
+11,1,Other,0.1453196032575959,0.7891776749677039,"congress, military, house, president, american, vote, voted, members, resolution, war powers, action, act, president trump, powers, american people",
+11,-1,Other,0.021756064286106595,0.3204727375054291,"republicans, america, americans, donald trump, donald, state, california, oil, millions, save america, midterms, save, don, change, cost",
+12,1,Healthcare Affordability,0.25478193692609546,0.7344229476840527,"obamacare, money, insurance companies, companies, pay, dollars, billion, people, billions, paid, directly people, trillions, fund, money directly, president trump",1.0
+12,-1,Other,0.07494495851391147,0.3845506435177721,"military, party, donald, donald trump, voters, midterm, border, health insurance, coverage, tax credits, election, republican, credits, policies, democratic",
+13,1,Other,0.010462549233097515,0.3179229947840862,"trump, president, president trump, donald, donald trump, trump republicans, administration, midterms, biden, obamacare, trump administration, president donald, midterm, elections, republicans",
+13,-1,Other,0.037333598171798925,0.2949993545504035,"vote, house, healthcare, senate, people, government, taxes, bills, pay, fund, voted, stop, act, market, state",
+14,1,Other,0.054158836319966895,0.4505191130970645,"democrats, obamacare, illegal, house, border, biden, house democrats, voted, open, senate, military, democrat, fraud, inflation, open border",
+14,-1,Other,0.022306905144056213,0.24047396613861147,"congress, republicans, ballot, trump republicans, billion, people, gop, fund, elections, national, federal, law, mortgage, debt, premiums",
+15,1,Housing Affordability,0.5019443112459938,0.9257963762488757,"rent, rent control, ballot, control, massachusetts, groceries, control ballot, ballot question, ballot measure, measure, question, groceries rent, november, landlords, statewide",1.0
+15,-1,Other,0.05926834056998244,0.3116922198669833,"costs, housing costs, lower, american, energy, america, senate, military, fraud, states, medicaid, spending, premiums, donald, lower housing",
+16,1,Other,0.020516102163231787,0.31899504639765897,"people, american, american people, america, president, president trump, country, maga, borders, obamacare, prices, free, actually, open, work",
+16,-1,Other,0.0412924118359585,0.28285534670779977,"billion, senate, house, costs, budget, ice, funding, state, voted, million, administration, federal, donald, donald trump, fund",
+17,1,Immigration,0.6872974896695013,0.9926715245739542,"immigration, illegal, enforcement, immigration enforcement, illegal immigration, immigrants, ice, law, federal, illegal immigrants, laws, legal, deportation, aliens, illegal aliens",1.0
+17,-1,Other,0.12641994681406843,0.4737571633875614,"military, border patrol, patrol, senate, million, ice border, people, voted, affordable, cost, house, cut, president, medicare, billion",
+18,1,Other,0.017393563898780558,0.3093041102454215,"republicans, house, senate, house republicans, senate republicans, trump republicans, american, house senate, voted, fund, ice, bills, medicaid, republicans voted, american people",
+18,-1,Other,0.028536868541187876,0.2880487742460629,"congress, million, gop, administration, border, biden, millions, california, states, oil, democrats, illegal, elections, state, companies",
+19,1,Other,0.06877177734840606,0.634932150696221,"act, save, america, america act, save america, affordable, care act, affordable care, pass, senate, obamacare, id, pass save, passed, secure",
+19,-1,Other,0.03899188807270852,0.24697161296950443,"people, money, health care, ice, costs, military, dollars, party, lower, pay, voters, congressional, big, plan, rates",
+20,1,Healthcare,0.31331301869536937,0.9040611385308891,"medicare, social security, security, social, security medicare, medicare medicaid, cut, seniors, benefits, medicaid, pay, administration, johnson, trump administration, congress",1.0
+20,-1,Other,0.05884366776586982,0.3750213808985739,"senate, president, house, million, people, big, ballot, state, president trump, cuts, republican, hospitals, prices, lost, families",
+21,1,Energy/Climate,0.47632484863298263,0.8622690919987334,"energy, climate, ballot, bills, costs, energy costs, oil, fighting, control, lower, american energy, climate change, obamacare, energy prices, rent control",0.6
+21,-1,Other,0.07847861831488943,0.30055189747409183,"ice, people, rent, house, pay, groceries, billion, senate, housing, inflation, donald, afford, donald trump, military, free",
+22,1,Other,0.24645704250485448,0.5113976199441163,"inflation, rates, mortgage, mortgage rates, midterms, midterm, fed, market, higher, affordability, rate, economy, midterm elections, biden, home",
+22,-1,Other,0.07010220353875574,0.3870227909503465,"donald, america, donald trump, china, ice, dollars, state, ukraine, billion, states, housing costs, millions, people, russia, military",
+23,1,Economy/Inflation,0.7117014602872345,0.9714250161957897,"tariffs, trump's, trump's tariffs, trade, trump tariffs, canada, farmers, congress, tariff, economy, impose, war, trade war, taxes, trump",1.0
+23,-1,Other,0.12497053437325467,0.3703192332343571,"military, mortgage, people, obamacare, rates, mortgage rates, president trump, fraud, gas, iran, big, energy, afford, security, action",
+24,1,Other,0.041102493061111,0.5230358018438277,"gop, obamacare, trump's, house, dems, senate, trump gop, voters, immigration, gop senators, security, midterm, senators, social security, party",
+24,-1,Other,0.07808343973973488,0.5082749192496103,"republicans, illegal, trump republicans, congress, higher, country, lower, money, democrats, costs, immigrants, president trump, dollars, pay, fighting",
+25,1,Other,0.030301768995489427,0.3568975255845604,"vote, midterms, november, election, lower, let, save, ballot, republican, elections, voting, america, medicare, voters, money",
+25,-1,Other,0.047096849424051915,0.2807157181782362,"affordable, american, inflation, care act, control, biden, security, affordable care, president, rent control, obamacare, families, administration, policies, million",
+26,1,Healthcare Affordability,0.6594814728869701,0.9313807831235792,"aca, subsidies, aca subsidies, expire, coverage, let, enhanced, subsidies expire, credits, tax credits, premium, extend, premiums, aca tax, let aca",1.0
+26,-1,Other,0.059655909873236275,0.44253236766023407,"president, military, president trump, american, senate, tax cuts, house, americans, cuts, security, american people, dollars, midterm, billionaires, tax",
+27,1,Other,0.019932786762776097,0.20139797803678008,"state, cost, taxes, california, ballot, policies, cost living, living, fraud, voters, property, illegal, democrat, spending, federal",
+27,-1,Other,0.08501788836681853,0.42685716790114286,"china, oil, midterms, house, ai, cuts, hormuz, russia, ft, market, markets, wsj, strait, reuters, deal",
+28,1,Other,0.06366395523902864,0.5229402506299565,"families, working, working families, groceries, afford, rent, groceries rent, paying, pay, struggling, costs, relief, families struggling, choose, real",
+28,-1,Other,0.04978615772281633,0.25521646211024257,"ballot, control, vote, rent control, prices, military, credits, tax credits, people, midterm, states, gas prices, obamacare, american people, grocery prices",
+29,1,Other,0.04540171079071026,0.3455249114976147,"americans, millions, million, millions americans, illegal, million americans, coverage, american, billion, affordable, afford, tax credits, credits, illegal aliens, aliens",
+29,-1,Other,0.08397969983964394,0.43445193937306215,"obamacare, inflation, congress, costs, subsidies, america, democrat, control, aca subsidies, state, cuts, real, voters, living, california",

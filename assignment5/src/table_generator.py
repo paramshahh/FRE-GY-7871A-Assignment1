@@ -61,69 +61,97 @@ def to_latex(df: pd.DataFrame, caption: str, label: str, digits: int = 3,
 # ---------------------------------------------------------------------------
 # The three exhibits
 # ---------------------------------------------------------------------------
-def table1_topics(scored: pd.DataFrame, salience: pd.DataFrame, tone: pd.DataFrame) -> pd.DataFrame:
-    """Topic salience and sentiment distribution across priority issues."""
+def table1_loadings(model, stability: pd.DataFrame, n_terms: int = 6) -> pd.DataFrame:
+    """Table 1A: each labelled LSA pole with its top terms and their loadings in U_k."""
     rows = []
-    for k in salience.columns:
-        d = scored[scored["topic"] == k]
-        n = len(d)
+    st = stability.set_index(["component", "sign"])["stability"] \
+        if len(stability) else pd.Series(dtype=float)
+    for _, p in model.poles.iterrows():
+        if p["label"] in ("Other",):
+            continue
+        u = p["sign"] * model.U[:, p["component"]]
+        idx = np.argsort(u)[::-1][:n_terms]
+        axis = f"{p['component']}{'+' if p['sign'] > 0 else '-'}"
+        rows.append({"Issue": p["label"], "Axis": axis,
+                     "σ": model.singular_values[p["component"]],
+                     "Seed share": p["seed_share"], "Purity": p["purity"],
+                     "Stability": st.get((p["component"], p["sign"]), np.nan),
+                     "Top terms (loading)": "; ".join(f"{model.terms[i]} ({u[i]:.2f})"
+                                                      for i in idx if u[i] > 0)})
+    out = pd.DataFrame(rows)
+    out = out[~((out["Issue"] == "General") & (out["Axis"].str.endswith("-")))]
+    return out.sort_values(["Issue", "Axis"]).set_index(["Issue", "Axis"])
+
+
+def table1_issues(daily, signals: pd.DataFrame, coverage: pd.DataFrame) -> pd.DataFrame:
+    """Table 1B: salience and sentiment distribution per issue."""
+    d = daily.docs
+    rows = []
+    for k in coverage.index:
+        dk = d[d["topic"] == k]
+        n = len(dk)
         rows.append({
-            "Topic": k, "Docs": n,
-            "Salience (mean)": salience[k].mean(),
-            "Tone (mean)": tone[k].mean(), "Tone (sd)": tone[k].std(),
-            "% Pos": 100 * (d["polarity"] > 0).mean() if n else np.nan,
-            "% Neg": 100 * (d["polarity"] < 0).mean() if n else np.nan,
-            "% Anxiety": 100 * d["anxiety"].mean() if n else np.nan,
-            "% Anger": 100 * d["anger"].mean() if n else np.nan,
-            "% Optimism": 100 * d["optimism"].mean() if n else np.nan,
-            "% Re-signed": 100 * (d["polarity"] != d["polarity_generic"]).mean() if n else np.nan,
+            "Issue": k, "Docs": n,
+            "Salience": daily.salience[k].mean() if k in daily.salience else np.nan,
+            "S mean": signals[k].mean() if k in signals else np.nan,
+            "S sd": signals[k].std() if k in signals else np.nan,
+            "% Pos": 100 * (dk["polarity"] > 0).mean() if n else np.nan,
+            "% Neg": 100 * (dk["polarity"] < 0).mean() if n else np.nan,
+            "% Anxiety": 100 * dk["anxiety"].mean() if n else np.nan,
+            "% Anger": 100 * dk["anger"].mean() if n else np.nan,
+            "% Optimism": 100 * dk["optimism"].mean() if n else np.nan,
+            "% Re-signed": 100 * (dk["polarity"] != dk["polarity_generic"]).mean() if n else np.nan,
+            "Coverage": coverage.loc[k, "coverage"],
+            "Used": "yes" if coverage.loc[k, "used"] else "no (too sparse)",
         })
-    return pd.DataFrame(rows).set_index("Topic")
+    return pd.DataFrame(rows).set_index("Issue")
 
 
-def table2_stage1(stage1: pd.DataFrame, reverse: pd.DataFrame | None = None) -> pd.DataFrame:
-    """Granger tests, topic tone -> P(Dem) changes, with the reverse direction."""
+def table2_stage1(stage1: pd.DataFrame, reverse: pd.DataFrame | None = None,
+                  robust: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Granger tests, topic sentiment -> dProb, with robustness and reverse direction."""
     t = stage1.copy()
-    t["Chamber"] = t["effect"].str.replace("dProb_", "", regex=False)
-    t["Topic"] = t["cause"].str.replace("tone_", "", regex=False)
-    out = t.assign(**{"F": t["F"], "p": t["p_value"], "q (BH)": t["q_value"],
-                      "Sig.": t["p_value"].map(stars), "Σγ": t["sum_gamma"],
-                      "ΔR²": t["r2_gain"], "Lags": t["lags"], "N": t["nobs"]})
-    cols = ["Topic", "Chamber", "Lags", "N", "F", "p", "q (BH)", "Sig.", "Σγ", "ΔR²"]
-    out = out[cols]
-    if reverse is not None and len(reverse):
-        r = reverse.assign(Chamber=reverse["cause"].str.replace("dProb_", "", regex=False),
-                           Topic=reverse["effect"].str.replace("tone_", "", regex=False))
-        out = out.merge(r[["Topic", "Chamber", "p_value"]].rename(
-            columns={"p_value": "p (reverse)"}), on=["Topic", "Chamber"], how="left")
-    return out.set_index(["Topic", "Chamber"]).sort_index()
+    t["Contract"] = t["effect"].str.replace("dProb_", "", regex=False)
+    t["Issue"] = t["cause"].str.replace("S_", "", regex=False)
+    out = pd.DataFrame({"Issue": t["Issue"], "Contract": t["Contract"], "Lags": t["lags"],
+                        "N": t["nobs"], "F": t["F"], "p": t["p_value"], "q (BH)": t["q_value"],
+                        "Sig.": t["p_value"].map(stars), "Σγ": t["sum_gamma"],
+                        "ΔR²": t["r2_gain"]})
+    for name, df, col_c, col_e in (("p (3d)", robust, "cause", "effect"),
+                                   ("p (rev)", reverse, "effect", "cause")):
+        if df is not None and len(df):
+            m = pd.DataFrame({"Issue": df[col_c].str.replace("S_", "", regex=False),
+                              "Contract": df[col_e].str.replace("dProb_", "", regex=False),
+                              name: df["p_value"]})
+            out = out.merge(m, on=["Issue", "Contract"], how="left")
+    return out.set_index(["Issue", "Contract"]).sort_index()
 
 
-def table3_sectors(stage2_ret: pd.DataFrame, stage2_vol: pd.DataFrame,
-                   rs: pd.DataFrame) -> pd.DataFrame:
-    """Sector ETF reactivity: dProb -> excess returns and range volatility, plus RS betas."""
+def table3_basket(stage2_ret: pd.DataFrame, stage2_vol: pd.DataFrame,
+                  rs: pd.DataFrame) -> pd.DataFrame:
+    """Basket reactivity: dProb -> excess returns and volatility, plus Rigobon-Sack betas."""
     rows = []
-    for etf in config.SECTOR_ETFS:
-        for ch in config.CHAMBERS:
+    for asset in config.ASSETS:
+        for ch in config.CONTRACTS:
             cause = f"dProb_{ch}"
-            r = stage2_ret[(stage2_ret["effect"] == etf) & (stage2_ret["cause"] == cause)]
-            v = stage2_vol[(stage2_vol["effect"] == f"vol_{etf}") & (stage2_vol["cause"] == cause)]
-            s = rs[(rs["etf"] == etf) & (rs["chamber"] == ch)] if len(rs) else rs
+            r = stage2_ret[(stage2_ret["effect"] == asset) & (stage2_ret["cause"] == cause)]
+            v = stage2_vol[(stage2_vol["effect"] == f"vol_{asset}")
+                           & (stage2_vol["cause"] == cause)]
+            s = rs[(rs["asset"] == asset) & (rs["contract"] == ch)] if len(rs) else rs
             if r.empty and v.empty:
                 continue
             rows.append({
-                "ETF": etf, "Chamber": ch,
+                "Asset": asset, "Contract": ch,
                 "Ret F": _first(r, "F"), "Ret p": _first(r, "p_value"),
-                "Ret q": _first(r, "q_value"),
-                "Ret Σγ": _first(r, "sum_gamma"),
+                "Ret q": _first(r, "q_value"), "Ret Σγ": _first(r, "sum_gamma"),
                 "Vol F": _first(v, "F"), "Vol p": _first(v, "p_value"),
                 "Vol q": _first(v, "q_value"),
                 "β OLS": _first(s, "beta_ols"), "β RS": _first(s, "beta_rs"),
                 "RS 95% CI": (f"[{_first(s, 'ci_low'):.2f}, {_first(s, 'ci_high'):.2f}]"
                               if len(s) else "–"),
-                "VarH/VarL": _first(s, "var_ratio_x"),
+                "VarH/VarL": _first(s, "var_ratio_x"), "Relevance p": _first(s, "var_ratio_p"),
             })
-    return pd.DataFrame(rows).set_index(["ETF", "Chamber"])
+    return pd.DataFrame(rows).set_index(["Asset", "Contract"])
 
 
 def _first(d: pd.DataFrame, col: str) -> float:

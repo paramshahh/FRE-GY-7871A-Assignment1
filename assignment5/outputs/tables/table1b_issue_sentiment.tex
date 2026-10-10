@@ -1,0 +1,21 @@
+\begin{table}[htbp]
+\centering
+\caption{Table 1B: Topic salience and sentiment by issue}
+\label{tab:table1b_issue_sentiment}
+\small
+\begin{tabular}{lrrrrrrrrrrrr}
+\toprule
+Issue & Docs & Salience & S mean & S sd & \% Pos & \% Neg & \% Anxiety & \% Anger & \% Optimism & \% Re-signed & Coverage & Used \\
+\midrule
+Economy/Inflation & 416 & 0.171 & -0.398 & 0.246 & 25.000 & 71.875 & 14.904 & 6.010 & 14.663 & 13.462 & 0.981 & yes \\
+Housing Affordability & 447 & 0.031 & 0.010 & 0.273 & 47.651 & 42.058 & 13.870 & 3.356 & 15.884 & 9.396 & 0.981 & yes \\
+Healthcare Affordability & 401 & 0.071 & -0.174 & 0.257 & 41.895 & 50.374 & 6.484 & 4.239 & 11.970 & 12.968 & 0.994 & yes \\
+Healthcare & 1,076 & 0.274 & -0.037 & 0.206 & 45.353 & 51.394 & 11.431 & 6.877 & 11.152 & 7.621 & 0.994 & yes \\
+Energy/Climate & 160 & 0.076 & 0.244 & 0.229 & 72.500 & 26.250 & 13.750 & 3.125 & 31.875 & 5.000 & 0.961 & yes \\
+Immigration & 480 & 0.254 & -0.014 & 0.285 & 44.792 & 46.875 & 9.167 & 7.500 & 13.125 & 1.667 & 0.981 & yes \\
+Foreign Policy/Defense & 269 & 0.122 & -0.766 & 0.148 & 8.922 & 89.591 & 25.279 & 8.178 & 21.933 & 0.372 & 0.877 & yes \\
+Technology/AI & 0 & 0.000 & – & – & – & – & – & – & – & – & 0.000 & no (too sparse) \\
+\bottomrule
+\end{tabular}
+\par\smallskip\footnotesize\emph{Notes:} Salience from the general stratum only; S\_k,t pooled over 5 sessions with >= 5 effective documents. \% re-signed: issue-conditioned polarity differs from generic VADER.
+\end{table}

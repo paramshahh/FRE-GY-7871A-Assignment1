@@ -59,17 +59,19 @@ TOPICS: dict[str, list[str]] = {
     ],
 }
 
-# Topic -> ETFs, with the sign of the hypothesised exposure to a rise in the
-# probability of Democratic control (+1 benefits, -1 hurts, 0 ambiguous).
-SECTOR_MAP: dict[str, dict[str, int]] = {
-    "Foreign Policy/Defense": {"XAR": -1, "ITA": -1},
-    "Energy/Climate": {"ICLN": +1, "XLE": -1},
-    "Healthcare": {"XLV": -1},
-    "Healthcare Affordability": {"XLV": -1},
+# Issue -> assets, with the hypothesised sign of each asset's exposure to a rise in
+# P(Democratic control) (+1 benefits, -1 hurts, 0 ambiguous). Used for the direct
+# sentiment -> asset tests and to read signs in Table 3.
+ISSUE_ASSETS: dict[str, dict[str, int]] = {
+    "Energy/Climate": {"ICLN": +1, "ENPH": +1, "XLE": -1, "XOM": -1},
+    "Healthcare": {"XLV": -1, "UNH": -1},
+    "Healthcare Affordability": {"XLV": -1, "UNH": -1},
+    "Economy/Inflation": {"XLF": -1, "JPM": -1},
     "Housing Affordability": {"ITB": 0, "XHB": 0},
-    "Economy/Inflation": {"XLF": -1},
-    "Technology/AI": {"XLK": 0},
+    "Foreign Policy/Defense": {"XAR": -1, "ITA": -1, "LMT": -1},
+    "Technology/AI": {"XLK": 0, "NVDA": 0, "MSFT": 0, "GOOGL": 0, "META": 0, "AAPL": 0},
 }
+SECTOR_MAP = ISSUE_ASSETS  # backwards-compatible name
 SECTOR_ETFS = ["XLE", "ICLN", "XLV", "XLF", "XAR", "ITA", "XLK", "ITB", "XHB"]
 # Single-name midterm basket, by policy exposure
 BASKET_STOCKS = {

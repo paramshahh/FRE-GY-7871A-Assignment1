@@ -402,9 +402,10 @@ def gdelt_to_trading_days(tl: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.Da
     g = tl.groupby("session")
     for k in topics:
         n = g[f"count_{k}"].sum(min_count=1)
-        w = (tl[f"tone_{k}"] * tl[f"count_{k}"]).groupby(tl["session"]).sum(min_count=1)
         out[f"count_{k}"] = n
-        out[f"tone_{k}"] = w / n.replace(0, np.nan)
+        if f"tone_{k}" in tl:  # a resumable download can have counts before tones
+            w = (tl[f"tone_{k}"] * tl[f"count_{k}"]).groupby(tl["session"]).sum(min_count=1)
+            out[f"tone_{k}"] = w / n.replace(0, np.nan)
     out["norm"] = g["norm"].sum(min_count=1)
     out["outage_days"] = bad.groupby(sess_all).sum().reindex(calendar, fill_value=0)
     for k in topics:

@@ -78,10 +78,10 @@ Stooq blocked repeated downloads, so each fund is triangulated against funds wit
 | index | fund | sibling | days | corr | median_abs_diff_bp | days_over_6sd |
 |---|---|---|---|---|---|---|
 | 0 | SPY | IVV | 154 | 0.9989 | 1.4779 | 5 |
-| 1 | SPY | VOO | 154 | 0.9994 | 1.2580 | 2 |
+| 1 | SPY | VOO | 154 | 0.9994 | 1.2575 | 2 |
 | 2 | XLE | VDE | 154 | 0.9964 | 8.7808 | 0 |
 | 3 | XLV | VHT | 154 | 0.9882 | 11.1639 | 0 |
-| 4 | XLF | VFH | 154 | 0.9944 | 5.8139 | 0 |
+| 4 | XLF | VFH | 154 | 0.9944 | 5.8136 | 0 |
 | 5 | XLK | VGT | 154 | 0.9927 | 13.6761 | 0 |
 | 6 | XAR | ITA | 154 | 0.9257 | 52.4824 | 0 |
 | 7 | ITB | XHB | 154 | 0.9661 | 33.9982 | 0 |
@@ -90,17 +90,17 @@ Stooq blocked repeated downloads, so each fund is triangulated against funds wit
 
 | index | fund | sibling | date | fund_bp | sibling_bp | z |
 |---|---|---|---|---|---|---|
-| 0 | SPY | IVV | 2026-06-25 | 14.4459 | -2.1715 | 7.5896 |
-| 1 | SPY | IVV | 2026-06-26 | -72.5760 | -86.3186 | 6.2776 |
-| 2 | SPY | IVV | 2026-06-29 | 163.4058 | 190.1902 | -12.2184 |
-| 3 | SPY | IVV | 2026-06-30 | 77.5665 | 62.9574 | 6.6731 |
-| 4 | SPY | IVV | 2026-07-01 | -13.5342 | 2.8032 | -7.4505 |
+| 0 | SPY | IVV | 2026-06-25 | 14.4459 | -2.1715 | 7.5894 |
+| 1 | SPY | IVV | 2026-06-26 | -72.5760 | -86.3186 | 6.2774 |
+| 2 | SPY | IVV | 2026-06-29 | 163.4058 | 190.1902 | -12.2186 |
+| 3 | SPY | IVV | 2026-06-30 | 77.5665 | 62.9574 | 6.6728 |
+| 4 | SPY | IVV | 2026-07-01 | -13.5342 | 2.8032 | -7.4507 |
 | 5 | SPY | VOO | 2026-06-25 | 14.4459 | 0.2961 | 7.6881 |
 | 6 | SPY | VOO | 2026-06-26 | -72.5760 | -51.9047 | -11.3404 |
 
 ### SPY vs the S&P 500 index (FRED SP500)
 
-On 2026-06-26 the index prints -4.7bp while SPY, IVV and VOO (three issuers) all fall 73-86bp: the index close is stale, the ETF data is right.
+25 Jun - 1 Jul 2026: the index (FRED and Yahoo ^GSPC, one upstream source) and the three S&P 500 trackers SPY, IVV, VOO disagree by 15-30bp a day, while agreeing on the week's total (+155 to +170bp). Daily closes that week are mistimed in at least one feed. Sensitivity: replacing SPY with the median of SPY/IVV/VOO (mean change 0.9bp) or dropping 24 Jun - 2 Jul leaves every Stage 2 result's sign and significance unchanged (see the report).
 
 | index | fund | sibling | days | corr | median_abs_diff_bp | days_over_6sd |
 |---|---|---|---|---|---|---|
@@ -226,7 +226,7 @@ Paid calls in the ledger: 318 for 93,450 credits.
 
 | index | calendar_days | days_returned | outage_days | median_norm | queries_cached |
 |---|---|---|---|---|---|
-| 0.0000 | 222.0000 | 206.0000 | 19.0000 | 146819.5000 | 2.0000 |
+| 0.0000 | 222.0000 | 206.0000 | 19.0000 | 146819.5000 | 5.0000 |
 
 ### GDELT outage days (masked, never read as quiet news days)
 

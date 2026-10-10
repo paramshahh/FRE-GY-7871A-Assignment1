@@ -99,3 +99,34 @@ def test_high_news_days_and_event_study():
     dp = pd.Series(np.r_[np.zeros(30), 0.05, np.zeros(29)], idx)
     es = ge.event_study(ex, dp, n_events=1, window=3)
     assert es.loc[0, "XLE"] == pytest.approx(0.01) and es.loc[-1, "XLE"] == pytest.approx(0)
+
+
+def test_factor_oos_uses_only_post_training_dates():
+    rng = np.random.default_rng(2)
+    idx = pd.bdate_range("2025-01-01", periods=300)
+    f = pd.DataFrame({"F1": rng.normal(size=300)}, idx)
+    y = pd.DataFrame({"a": 0.5 * f["F1"].shift(1) + rng.normal(size=300),
+                      "b": -0.5 * f["F1"].shift(1) + rng.normal(size=300)}, idx)
+    V = pd.DataFrame({"F1": [0.7071, -0.7071]}, index=["a", "b"])
+    out = ge.factor_oos(f, V, y, idx[179])
+    assert out.loc[0, "oos_days"] == 120 and out.loc[0, "oos_corr"] > 0.3
+    assert out.loc[0, "targets_right_sign"] == 1.0
+    # destroy the post-training relation: the OOS score must collapse
+    y.loc[idx[180]:] = rng.normal(size=(120, 2))
+    assert abs(ge.factor_oos(f, V, y, idx[179]).loc[0, "oos_corr"]) < 0.2
+
+
+def test_robustness_battery_separates_real_from_outlier_driven():
+    rng = np.random.default_rng(5)
+    idx = pd.bdate_range("2026-01-01", periods=300)
+    x = pd.Series(rng.normal(size=300), idx, name="dProb")
+    y = pd.Series(0.35 * x.shift(1).fillna(0) + rng.normal(size=300), idx, name="R")
+    assert ge.granger_robustness(y, x)["robust"]
+    # a relation carried entirely by two jump days must fail the battery
+    x2 = pd.Series(rng.normal(size=300), idx, name="dProb")
+    y2 = pd.Series(rng.normal(size=300), idx, name="R")
+    for d in (50, 200):
+        x2.iloc[d] = 12.0
+        y2.iloc[d + 1] = 15.0
+    r = ge.granger_robustness(y2, x2)
+    assert r["p"] < 0.05 and not r["robust"]

@@ -1,8 +1,6 @@
-# Downloaded data and pipeline caches are reproducible from build_report.py
+# Downloaded data is reproducible from the scripts (tweets cannot be redistributed)
 data/**
 !data/
-outputs/results.pkl
-outputs/figures/*
-outputs/tables/*
+outputs/*.pkl
 __pycache__/
 .pytest_cache/

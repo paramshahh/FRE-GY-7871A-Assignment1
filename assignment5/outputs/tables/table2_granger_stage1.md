@@ -1,0 +1,27 @@
+**Table 2: Granger causality, topic sentiment to prediction-market probabilities**
+
+| Issue | Contract | Lags | N | F | p | q (BH) | Sig. | Σγ | ΔR² | p (3d) | p (rev) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Economy/Inflation | House | 1 | 153 | 0.685 | 0.409 | 0.741 |  | -0.002 | 0.003 | 0.428 | 0.069 |
+| Economy/Inflation | Senate | 1 | 153 | 0.050 | 0.823 | 0.983 |  | -0.000 | 0.000 | 0.437 | 0.534 |
+| Economy/Inflation | Sweep | 1 | 153 | 0.063 | 0.801 | 0.983 |  | -0.001 | 0.000 | 0.407 | 0.154 |
+| Energy/Climate | House | 1 | 153 | 0.006 | 0.940 | 0.983 |  | -0.000 | 0.000 | 0.169 | 0.064 |
+| Energy/Climate | Senate | 1 | 153 | 0.489 | 0.485 | 0.784 |  | -0.002 | 0.002 | 0.202 | 0.352 |
+| Energy/Climate | Sweep | 1 | 153 | 0.876 | 0.351 | 0.741 |  | -0.002 | 0.003 | 0.334 | 0.242 |
+| Foreign Policy/Defense | House | 1 | 153 | 3.802 | 0.053 | 0.557 | * | 0.008 | 0.028 | 0.265 | 0.989 |
+| Foreign Policy/Defense | Senate | 1 | 153 | 2.496 | 0.116 | 0.625 |  | 0.008 | 0.014 | 0.957 | 0.765 |
+| Foreign Policy/Defense | Sweep | 1 | 153 | 0.260 | 0.611 | 0.917 |  | 0.002 | 0.001 | 0.724 | 0.927 |
+| Healthcare | House | 3 | 151 | 1.025 | 0.384 | 0.741 |  | -0.001 | 0.011 | 0.762 | 0.481 |
+| Healthcare | Senate | 1 | 153 | 2.234 | 0.137 | 0.625 |  | -0.005 | 0.011 | 0.033 | 0.605 |
+| Healthcare | Sweep | 3 | 151 | 2.832 | 0.041 | 0.557 | ** | -0.000 | 0.036 | 0.178 | 0.105 |
+| Healthcare Affordability | House | 1 | 153 | 0.994 | 0.320 | 0.741 |  | 0.003 | 0.011 | 0.452 | 0.990 |
+| Healthcare Affordability | Senate | 1 | 153 | 0.006 | 0.939 | 0.983 |  | -0.000 | 0.000 | 0.883 | 0.233 |
+| Healthcare Affordability | Sweep | 1 | 153 | 0.004 | 0.947 | 0.983 |  | 0.000 | 0.000 | 0.798 | 0.485 |
+| Housing Affordability | House | 1 | 153 | 0.000 | 0.983 | 0.983 |  | -0.000 | 0.000 | 0.772 | 0.716 |
+| Housing Affordability | Senate | 1 | 153 | 1.508 | 0.221 | 0.741 |  | -0.004 | 0.011 | 0.060 | 0.688 |
+| Housing Affordability | Sweep | 1 | 153 | 0.763 | 0.384 | 0.741 |  | -0.002 | 0.005 | 0.546 | 0.096 |
+| Immigration | House | 1 | 153 | 2.107 | 0.149 | 0.625 |  | 0.002 | 0.007 | 0.157 | 0.664 |
+| Immigration | Senate | 1 | 153 | 0.645 | 0.423 | 0.741 |  | -0.003 | 0.006 | 0.443 | 0.308 |
+| Immigration | Sweep | 1 | 153 | 0.158 | 0.691 | 0.968 |  | -0.001 | 0.001 | 0.676 | 0.895 |
+
+_HC1 F-tests, lags by BIC, lagged SPY, VIX and 2Y controls. q: Benjamini-Hochberg FDR across the table. p (3d): 3-session pooled sentiment. p (rev): dProb -> S._

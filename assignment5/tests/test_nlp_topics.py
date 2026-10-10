@@ -151,3 +151,12 @@ def test_gdelt_outage_at_sample_end_is_caught():
     norm = pd.Series([1e5] * 30 + [5e4, 4000, 678], index=pd.date_range("2026-09-01", periods=33))
     out = nt.gdelt_outages(norm)
     assert out.iloc[-1] and out.iloc[-2] and not out.iloc[-3] and out.iloc[:30].sum() == 0
+
+
+def test_gdelt_partial_cache_count_without_tone():
+    cal = trading_calendar("2026-09-08", "2026-09-18")
+    idx = pd.date_range("2026-09-07", "2026-09-17", freq="D")
+    tl = pd.DataFrame({"count_All": 100.0, "tone_All": -1.0, "count_Healthcare": 9.0,
+                       "norm": 1e5}, index=idx)
+    out = nt.gdelt_to_trading_days(tl, cal)
+    assert "tone_Healthcare" not in out and out["sal_Healthcare"].dropna().eq(0.09).all()
