@@ -153,7 +153,7 @@ def parse_gdelt_artlist(payload: dict) -> pd.DataFrame:
 
 
 def collect_gdelt(start: str, end: str, session: requests.Session | None = None,
-                  query: str = GDELT_QUERY, pause: float = 5.5) -> pd.DataFrame:
+                  query: str = GDELT_QUERY, pause: float = 12.0) -> pd.DataFrame:
     """Up to 250 headlines per calendar day, cached to data/raw/gdelt/."""
     s = session or requests.Session()
     out_dir = config.RAW_DIR / "gdelt"
@@ -164,19 +164,108 @@ def collect_gdelt(start: str, end: str, session: requests.Session | None = None,
         if path.exists():
             frames.append(pd.read_csv(path))
             continue
-        r = s.get(GDELT_DOC, timeout=60, params={
-            "query": query, "mode": "artlist", "format": "json", "maxrecords": 250,
-            "sort": "datedesc",
+        df = parse_gdelt_artlist(gdelt_request({
+            "query": query, "mode": "artlist", "maxrecords": 250, "sort": "hybridrel",
             "startdatetime": f"{day:%Y%m%d}000000",
-            "enddatetime": f"{day:%Y%m%d}235959"})
-        r.raise_for_status()
-        df = parse_gdelt_artlist(r.json() if r.text.strip() else {})
+            "enddatetime": f"{day:%Y%m%d}235959"}, s, pause=pause))
         df.to_csv(path, index=False)
         frames.append(df)
-        time.sleep(pause)
     df = pd.concat(frames, ignore_index=True)
     df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
     return df.drop_duplicates(subset=["text"])
+
+
+def gdelt_request(params: dict, session: requests.Session | None = None,
+                  pause: float = 12.0, retries: int = 6) -> dict:
+    """GDELT DOC call with patient back-off; GDELT answers 429 in plain text when throttled."""
+    s = session or requests.Session()
+    for i in range(retries):
+        time.sleep(pause if i == 0 else 30 * i)
+        r = s.get(GDELT_DOC, params={**params, "format": "json"}, timeout=90)
+        if r.status_code == 429 or r.text.startswith("Please limit"):
+            continue
+        r.raise_for_status()
+        return r.json() if r.text.strip() else {}
+    raise ConnectionError("GDELT kept rate-limiting the request")
+
+
+def parse_gdelt_timeline(payload: dict) -> pd.DataFrame:
+    """timelinevolraw/timelinetone payload -> date-indexed frame (value, plus norm if present)."""
+    tl = (payload.get("timeline") or [{}])[0].get("data", [])
+    df = pd.DataFrame(tl)
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"], format="%Y%m%dT%H%M%SZ")
+    return df.set_index("date")
+
+
+def collect_gdelt_timelines(start: str, end: str, refresh: bool = False) -> pd.DataFrame:
+    """Daily article counts, total monitored volume and GDELT tone, overall and per topic.
+
+    Columns: ``count_<topic>``, ``tone_<topic>`` (and ``count_All``/``tone_All``
+    for all midterm coverage) plus ``norm`` = all US English articles GDELT
+    monitored that day, the denominator for salience.
+    """
+    path = config.RAW_DIR / "gdelt_timelines.csv"
+    if path.exists() and not refresh:
+        return pd.read_csv(path, index_col=0, parse_dates=True)
+    s = requests.Session()
+    window = {"startdatetime": f"{pd.Timestamp(start):%Y%m%d}000000",
+              "enddatetime": f"{pd.Timestamp(end):%Y%m%d}235959"}
+    queries = {"All": f"{config.GDELT_MIDTERMS} {config.GDELT_FILTERS}"}
+    queries.update({k: f"{config.GDELT_MIDTERMS} {v} {config.GDELT_FILTERS}"
+                    for k, v in config.GDELT_TOPIC_TERMS.items()})
+    cols = {}
+    for name, q in queries.items():
+        vol = parse_gdelt_timeline(gdelt_request({"query": q, "mode": "timelinevolraw",
+                                                  "timelinesmooth": 0, **window}, s))
+        tone = parse_gdelt_timeline(gdelt_request({"query": q, "mode": "timelinetone",
+                                                   "timelinesmooth": 0, **window}, s))
+        cols[f"count_{name}"] = vol["value"]
+        if name == "All":
+            cols["norm"] = vol["norm"]
+        cols[f"tone_{name}"] = tone["value"]
+        log.info("GDELT %s: %d days", name, len(vol))
+    df = pd.DataFrame(cols)
+    df.to_csv(path)
+    return df
+
+
+def gdelt_outages(norm: pd.Series, window: int = 15, floor: float = 0.3) -> pd.Series:
+    """Days where GDELT's total monitored volume is below ``floor`` x its rolling median."""
+    med = norm.rolling(window, center=True, min_periods=5).median()
+    return (norm < floor * med).rename("outage")
+
+
+def gdelt_to_trading_days(tl: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.DataFrame:
+    """Daily GDELT timelines (UTC days) -> trading days, with outage days set to NaN.
+
+    A UTC day ends at 20:00 ET (19:00 in winter), after the equity close, so its
+    counts are information for the *next* session. Counts are summed over the
+    UTC days that map to a session (weekends roll into Monday) and tones are
+    article-weighted means. Salience is each topic's share of midterm coverage.
+    """
+    tl = tl.copy()
+    bad = gdelt_outages(tl["norm"])
+    tl.loc[bad] = np.nan
+    ends = pd.Series(tl.index + pd.Timedelta(days=1), index=tl.index).dt.tz_localize("UTC")
+    tl["session"] = to_trading_day(ends, calendar).values
+    tl = tl.dropna(subset=["session"])
+    topics = [c[len("count_"):] for c in tl.columns if c.startswith("count_")]
+    out = pd.DataFrame(index=calendar)
+    g = tl.groupby("session")
+    for k in topics:
+        n = g[f"count_{k}"].sum(min_count=1)
+        w = (tl[f"tone_{k}"] * tl[f"count_{k}"]).groupby(tl["session"]).sum(min_count=1)
+        out[f"count_{k}"] = n
+        out[f"tone_{k}"] = w / n.replace(0, np.nan)
+    out["norm"] = g["norm"].sum(min_count=1)
+    out["outage_days"] = bad.groupby(tl["session"]).sum() if len(tl) else 0
+    for k in topics:
+        if k != "All":
+            out[f"sal_{k}"] = out[f"count_{k}"] / out["count_All"].replace(0, np.nan)
+    out.index.name = "date"
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -397,6 +486,16 @@ TOPIC_LEXICON: dict[str, dict[str, float]] = {
                           "unaffordable": -2.5, "tariffs": -1.0, "recession": -2.5,
                           "layoffs": -2.5, "cooling": 1.5, "falling": 1.0, "cheaper": 2.0,
                           "affordable": 1.8, "growth": 1.5, "hiring": 1.8},
+    "Housing Affordability": {"rising": -2.0, "higher": -1.5, "soaring": -2.5, "surge": -2.0,
+                              "unaffordable": -2.5, "expensive": -2.0, "priced": -1.5,
+                              "outbid": -1.8, "eviction": -2.5, "evictions": -2.5,
+                              "falling": 1.2, "lower": 1.5, "cooling": 1.2, "cheaper": 2.0,
+                              "affordable": 1.8, "approved": 1.2, "closing": 0.5},
+    "Healthcare Affordability": {"rising": -2.0, "higher": -1.5, "spike": -2.0, "hike": -2.0,
+                                 "expire": -1.8, "expired": -1.8, "expiring": -1.5,
+                                 "cliff": -1.8, "doubled": -2.0, "unaffordable": -2.5,
+                                 "capped": 1.8, "cap": 1.2, "lower": 1.5, "cheaper": 2.0,
+                                 "extended": 1.5, "saving": 1.8, "negotiated": 1.2},
     "Healthcare": {"cuts": -2.5, "cut": -2.0, "rising": -2.0, "premiums": -0.5,
                    "uninsured": -2.0, "expire": -1.5, "expired": -1.5, "lost": -2.0,
                    "expand": 1.8, "expanded": 1.8, "covered": 1.5, "capped": 1.5,

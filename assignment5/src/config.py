@@ -25,12 +25,20 @@ MARKET_CLOSE_HOUR = 16  # text stamped at/after 16:00 ET belongs to the next tra
 # ---------------------------------------------------------------------------
 TOPICS: dict[str, list[str]] = {
     "Economy/Inflation": [
-        "inflation", "prices", "groceries", "rent", "wages", "economy", "jobs",
-        "tariffs", "cost", "mortgage", "recession", "gas", "affordability", "fed",
+        "inflation", "prices", "groceries", "wages", "economy", "jobs", "tariffs",
+        "recession", "gas", "fed", "unemployment", "layoffs", "paycheck",
+    ],
+    "Housing Affordability": [
+        "housing", "mortgage", "mortgages", "homebuyers", "homebuyer", "rent", "rents",
+        "homeownership", "downpayment", "starter", "homes", "affordability", "zoning",
+    ],
+    "Healthcare Affordability": [
+        "premiums", "deductible", "deductibles", "copay", "subsidies", "aca", "obamacare",
+        "drug", "prescription", "insulin", "medical", "uninsured", "copays",
     ],
     "Healthcare": [
-        "healthcare", "medicare", "medicaid", "insurance", "premiums", "aca",
-        "obamacare", "drug", "prescription", "hospital", "coverage", "pharma",
+        "healthcare", "medicare", "medicaid", "hospital", "hospitals", "coverage",
+        "insurance", "doctors", "pharma", "abortion", "vaccines", "rural",
     ],
     "Energy/Climate": [
         "energy", "climate", "oil", "drilling", "solar", "wind", "renewable",
@@ -56,10 +64,12 @@ SECTOR_MAP: dict[str, dict[str, int]] = {
     "Foreign Policy/Defense": {"XAR": -1, "ITA": -1},
     "Energy/Climate": {"ICLN": +1, "XLE": -1},
     "Healthcare": {"XLV": -1},
+    "Healthcare Affordability": {"XLV": -1},
+    "Housing Affordability": {"ITB": 0, "XHB": 0},
     "Economy/Inflation": {"XLF": -1},
     "Technology/AI": {"XLK": 0},
 }
-SECTOR_ETFS = ["XLE", "ICLN", "XLV", "XLF", "XAR", "ITA", "XLK"]
+SECTOR_ETFS = ["XLE", "ICLN", "XLV", "XLF", "XAR", "ITA", "XLK", "ITB", "XHB"]
 BENCHMARK = "SPY"
 YAHOO_MACRO = {"VIX": "^VIX"}
 FRED_SERIES = {"DGS2": "DGS2", "DGS3MO": "DGS3MO"}
@@ -78,9 +88,32 @@ KALSHI_EVENTS = {  # markets are <event>-D and <event>-R
     "House": os.environ.get("KALSHI_HOUSE_EVENT", "CONTROLH-2026"),
     "Senate": os.environ.get("KALSHI_SENATE_EVENT", "CONTROLS-2026"),
 }
-# Venue weights in the consensus probability (liquidity-motivated; renormalised
-# over whichever venues report on a given day).
-VENUE_WEIGHTS = {"polymarket": 0.45, "kalshi": 0.45, "predictit": 0.10}
+PREDICTIT_MARKET_IDS = {  # "Which party will win the House in the 2026 election?" etc.
+    "House": int(os.environ.get("PREDICTIT_HOUSE_ID", 8157)),
+    "Senate": int(os.environ.get("PREDICTIT_SENATE_ID", 8155)),
+}
+# Venue weights in the consensus probability, renormalised over the venues quoting
+# that day. PredictIt only publishes daily bars that close at midnight ET, which
+# cannot be aligned to the 16:00 equity close, so it is kept as a cross-check
+# series with zero weight.
+VENUE_WEIGHTS = {"polymarket": 0.5, "kalshi": 0.5, "predictit": 0.0}
+
+# GDELT DOC 2.0 queries: midterm coverage that also mentions each issue. GDELT
+# ignores words under three letters, so short seeds (ai, ev, ice) are spelled out.
+GDELT_MIDTERMS = '(midterms OR "midterm election" OR "midterm elections")'
+GDELT_TOPIC_TERMS = {
+    "Economy/Inflation": '(inflation OR "grocery prices" OR economy OR tariffs OR jobs)',
+    "Housing Affordability": ('(mortgage OR "mortgage rates" OR "home prices" OR "housing costs" '
+                              'OR homebuyers OR "housing affordability" OR rent)'),
+    "Healthcare Affordability": ('("health insurance premiums" OR "drug prices" OR "ACA subsidies" '
+                                 'OR "health care costs" OR "out-of-pocket" OR "prescription drug")'),
+    "Healthcare": '(healthcare OR medicare OR medicaid OR hospitals OR "health coverage")',
+    "Energy/Climate": '(energy OR climate OR oil OR gasoline OR renewable OR electricity)',
+    "Immigration": '(immigration OR border OR migrants OR deportation OR asylum)',
+    "Foreign Policy/Defense": '(defense OR military OR ukraine OR china OR israel OR iran)',
+    "Technology/AI": '("artificial intelligence" OR "big tech" OR semiconductor OR "data privacy")',
+}
+GDELT_FILTERS = "sourcecountry:US sourcelang:english"
 
 # ---------------------------------------------------------------------------
 # Social media quality filters (bot and astroturf screening).

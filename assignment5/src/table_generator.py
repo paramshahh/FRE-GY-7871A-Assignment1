@@ -18,9 +18,13 @@ def fmt(x, digits: int = 3) -> str:
         return x
     if x is None or (isinstance(x, float) and not np.isfinite(x)):
         return "–"
+    if isinstance(x, (bool, np.bool_)):
+        return str(x)
     if isinstance(x, (int, np.integer)):
         return f"{x:,}"
-    return f"{x:.{digits}f}"
+    if isinstance(x, (float, np.floating)):
+        return f"{x:.{digits}f}"
+    return str(x)
 
 
 def to_markdown(df: pd.DataFrame, digits: int = 3, index: bool = True) -> str:

@@ -53,18 +53,24 @@ def test_kalshi_candles_cents_dollars_and_midpoint():
     ]}
     s = pm.parse_kalshi_candles(payload)
     assert s.tolist() == pytest.approx([0.91, 0.92, 0.92])
+    assert s.index[0] == pd.Timestamp(1759700000 - 1, unit="s", tz="UTC")
+    wide = pm.parse_kalshi_candles({"candlesticks": [
+        {"end_period_ts": 1759700000, "price": {"close_dollars": "0.50"},
+         "yes_bid": {"close_dollars": "0.60"}, "yes_ask": {"close_dollars": "0.62"}},
+        {"end_period_ts": 1759703600, "price": {"close_dollars": "0.50"},
+         "yes_bid": {"close_dollars": "0.40"}, "yes_ask": {"close_dollars": "0.70"}}]})
+    assert wide.tolist() == pytest.approx([0.61, 0.50])   # midpoint unless spread too wide
 
 
 def test_predictit_snapshot_and_csv(tmp_path):
-    snap = {"markets": [{"name": "Which party will control the House after 2026?",
-                         "contracts": [{"name": "Democratic", "lastTradePrice": 0.84},
-                                       {"name": "Republican", "lastTradePrice": 0.19}]}]}
-    assert pm.find_predictit_contracts(snap, "House") == {"D": 0.84, "R": 0.19}
-    assert pm.find_predictit_contracts(snap, "Senate") == {}
+    snap = {"id": 8157, "contracts": [{"name": "Democratic", "lastTradePrice": 0.84},
+                                      {"name": "Republican", "lastTradePrice": 0.19}]}
+    assert pm.parse_predictit_snapshot(snap) == {"D": 0.84, "R": 0.19}
     f = tmp_path / "house_export.csv"
-    f.write_text("ContractName,Date,OpenSharePrice,HighSharePrice,LowSharePrice,CloseSharePrice\n"
-                 "Democratic,10/01/2026,$0.83,$0.85,$0.82,$0.84\n"
-                 "Republican,10/01/2026,$0.18,$0.19,$0.16,$0.17\n")
+    f.write_text("ContractName,Date,OpenSharePrice,HighSharePrice,LowSharePrice,"
+                 "CloseSharePrice,TradeVolume\n"
+                 "Democratic,10/1/2026 12:00:00 AM,$0.83,$0.85,$0.82,$0.84,10\n"
+                 "Republican,10/1/2026 12:00:00 AM,$0.18,$0.19,$0.16,$0.17,3\n")
     df = pm.parse_predictit_csv(f)
     assert set(df["party"]) == {"D", "R"} and df["price"].max() == pytest.approx(0.84)
 
@@ -74,8 +80,16 @@ def test_to_daily_uses_last_quote_before_close():
     s = pd.Series([0.50, 0.55, 0.60], index=pd.to_datetime(
         ["2026-10-06 14:00+00:00", "2026-10-06 19:00+00:00", "2026-10-06 21:00+00:00"]))
     d = pm.to_daily(s, cal)
-    assert d.loc["2026-10-06"] == 0.55 and d.loc["2026-10-07"] == 0.60
-    assert np.isnan(d.loc["2026-10-05"])
+    assert d.loc["2026-10-06", "prob_dem"] == 0.55 and d.loc["2026-10-07", "prob_dem"] == 0.60
+    assert d.loc["2026-10-06", "quote_ts"] == pd.Timestamp("2026-10-06 19:00", tz="UTC")
+    assert np.isnan(d.loc["2026-10-05", "prob_dem"])
+
+
+def test_windows_cover_range_without_gaps():
+    w = pm._windows("2026-03-02", "2026-03-31", 14)
+    assert all(a[1] == b[0] for a, b in zip(w, w[1:]))
+    assert w[-1][1] - w[0][0] == 30 * 86400 - 3600   # ET midnights; DST starts 8 Mar
+    assert max(b - a for a, b in w) <= 14 * 86400
 
 
 def test_consensus_renormalises_over_reporting_venues():

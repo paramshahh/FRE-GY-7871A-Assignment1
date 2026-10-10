@@ -88,3 +88,19 @@ def test_gdelt_parse():
     df = nt.parse_gdelt_artlist({"articles": [{"url": "u", "title": "Midterms heat up",
                                                "seendate": "20260910T123000Z", "domain": "x.com"}]})
     assert df.loc[0, "created_at"] == pd.Timestamp("2026-09-10 12:30", tz="UTC")
+
+
+def test_gdelt_utc_days_roll_to_next_session_and_drop_outages():
+    cal = trading_calendar("2026-09-08", "2026-09-18")
+    idx = pd.date_range("2026-09-07", "2026-09-17", freq="D")
+    norm = pd.Series(100000.0, index=idx)
+    norm.loc["2026-09-15"] = 500.0                      # feed outage
+    tl = pd.DataFrame({"count_All": 100.0, "count_Healthcare": 10.0, "tone_All": -1.0,
+                       "tone_Healthcare": -2.0, "norm": norm}, index=idx)
+    out = nt.gdelt_to_trading_days(tl, cal)
+    # Tue 8 Sep (UTC) ends after the close -> Wed 9 Sep; Fri+Sat+Sun -> Mon 14 Sep
+    assert out.loc["2026-09-09", "count_All"] == 100
+    assert out.loc["2026-09-14", "count_All"] == 300
+    assert out.loc["2026-09-14", "sal_Healthcare"] == pytest.approx(0.1)
+    assert np.isnan(out.loc["2026-09-16", "count_All"])   # outage day (15th) -> NaN
+    assert nt.gdelt_outages(norm).sum() == 1
