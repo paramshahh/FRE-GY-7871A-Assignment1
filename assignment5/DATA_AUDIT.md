@@ -79,7 +79,7 @@ Stooq blocked repeated downloads, so each fund is triangulated against funds wit
 |---|---|---|---|---|---|---|
 | 0 | SPY | IVV | 154 | 0.9989 | 1.4779 | 5 |
 | 1 | SPY | VOO | 154 | 0.9994 | 1.2575 | 2 |
-| 2 | XLE | VDE | 154 | 0.9964 | 8.7808 | 0 |
+| 2 | XLE | VDE | 154 | 0.9964 | 8.7803 | 0 |
 | 3 | XLV | VHT | 154 | 0.9882 | 11.1639 | 0 |
 | 4 | XLF | VFH | 154 | 0.9944 | 5.8136 | 0 |
 | 5 | XLK | VGT | 154 | 0.9927 | 13.6761 | 0 |
@@ -226,7 +226,7 @@ Paid calls in the ledger: 318 for 93,450 credits.
 
 | index | calendar_days | days_returned | outage_days | median_norm | queries_cached |
 |---|---|---|---|---|---|
-| 0.0000 | 222.0000 | 206.0000 | 19.0000 | 146819.5000 | 5.0000 |
+| 0.0000 | 222.0000 | 206.0000 | 19.0000 | 146819.5000 | 18.0000 |
 
 ### GDELT outage days (masked, never read as quiet news days)
 
