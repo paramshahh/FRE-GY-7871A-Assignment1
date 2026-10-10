@@ -252,52 +252,86 @@ def findings(R: Results) -> list[str]:
 
 
 METHODS = [
-    "<b>Calendar and timing.</b> Everything lives on the NYSE calendar. Tweets are fetched per "
-    "session (previous 16:00 ET close to this one), so weekend text lands on Monday. "
-    "Prediction-market probabilities are the last hourly quote at or before 16:00 ET "
-    "(median staleness: Kalshi 0 h, Polymarket 1 h). A GDELT day ends at 20:00 ET and "
-    "counts for the next session. Returns never span a missing print.",
-    "<b>Prediction markets.</b> Kalshi (CONTROLH-2026, CONTROLS-2026, KXBALANCEPOWERCOMBO-27FEB) "
-    "and Polymarket (control and balance-of-power markets), each normalised across all of its "
-    "outcomes. Consensus = equal-weight average; PredictIt (daily bars only) is a cross-check "
-    "with zero weight.",
-    "<b>Text.</b> twitterapi.io advanced search, two strata per session: a general "
-    "issue × political-context query, and an affordability oversample (housing and healthcare "
-    "costs) used for tone only. Server-side: English, no retweets or replies, 5–150 likes. "
-    "Client-side: followers ≥ 10, views ≥ 100, astroturf (same text from ≥ 5 accounts). "
-    "Budget: 93,450 credits, every call ledgered.",
-    "<b>LSA.</b> Uncentred TF-IDF (unigrams, bigrams, hashtags, cashtags; sublinear tf) → "
-    "truncated SVD, k = 30 → varimax rotation of components 1..29. Centring would densify "
-    "the matrix and treat unseen terms as negative evidence. Each pole is labelled by the "
-    "share of its loading energy on an issue's seed terms (≥ 15%, purity ≥ 60%); "
-    "stability = reappearance across 5 refits on 80% subsamples.",
-    "<b>Sentiment.</b> A document's weight on issue k is the squared cosine of its projection "
-    "on k's poles. Polarity is VADER with an issue-specific overlay (e.g. 'rising' is "
-    "negative for prices and rents). S_k,t = Σ(Pos − Neg)/ΣTotal pooled over 5 sessions with "
-    "≥ 5 effective documents; gaps are filled only from the past.",
-    "<b>Econometrics.</b> ADF-tested series; Granger F-tests with HC1 errors, BIC lags and "
-    "lagged SPY/ΔVIX/Δ2Y controls; Benjamini–Hochberg FDR per table; a robustness battery for "
-    "every survivor. Covariance SVD of (1/T)Σ s_{t−1}′δy_t on the first 60% of the sample, "
-    "circular-shift permutation test, out-of-sample scoring on the remaining 40%. "
-    "Rigobon–Sack β = ΔCov/ΔVar across H (top 20% GDELT midterm-news sessions) and L "
-    "sessions, GDELT outage sessions excluded, regime bootstrap CI.",
+    "<b>Data and timing.</b> All series sit on the NYSE calendar. Tweets are fetched per "
+    "session (previous 16:00 ET close to this one); prediction-market probabilities are the "
+    "last hourly quote at or before 16:00 ET (Kalshi CONTROLH-2026, CONTROLS-2026, "
+    "KXBALANCEPOWERCOMBO-27FEB; Polymarket control and balance-of-power markets; each "
+    "normalised across its outcomes, consensus = equal-weight average, PredictIt a zero-weight "
+    "cross-check); a GDELT day counts for the next session. Text: twitterapi.io, a general "
+    "issue × political-context stratum plus an affordability oversample used for tone only; "
+    "English, no retweets/replies, 5–150 likes, followers ≥ 10, views ≥ 100, astroturf removed "
+    "(93,450 credits, every call ledgered).",
+    "<b>LSA and sentiment.</b> Uncentred TF-IDF (uni/bigrams, hashtags, cashtags) → truncated "
+    "SVD, k = 30 → varimax rotation of components 1..29 (centring would densify the matrix and "
+    "treat unseen terms as negative evidence). Poles are labelled by the share of loading "
+    "energy on an issue's seed terms (≥ 15%, purity ≥ 60%). A document's issue weight is the "
+    "squared cosine of its projection on that issue's poles; polarity is VADER with an "
+    "issue-specific overlay ('rising' is negative for prices and rents). S_k,t = "
+    "Σ(Pos − Neg)/ΣTotal pooled over 5 sessions with ≥ 5 effective documents.",
+    "<b>Econometrics.</b> ADF-tested series; Granger F-tests (HC1, BIC lags, lagged SPY/ΔVIX/Δ2Y "
+    "controls); Benjamini–Hochberg FDR per table; a robustness battery for every survivor (HAC, "
+    "without the 5 largest ΔProb sessions, without 5 Jun 2026, both halves, placebo). "
+    "Covariance SVD of (1/T)Σ s_{t−1}′δy_t on the first 60% of the sample with a circular-shift "
+    "permutation test, scored out of sample on the last 40%. Rigobon–Sack β = ΔCov/ΔVar across "
+    "H (top 20% GDELT midterm-news sessions) and L sessions, outages excluded, regime bootstrap.",
 ]
 LIMITATIONS = [
-    "One campaign: 155 sessions. A daily Granger test has little power against effects that "
-    "build over weeks.",
-    "The X sample is politically engaged mid-size accounts (median ~24–42k followers), not "
-    "the median voter: posts that earn ≥ 5 likes mostly come from accounts with an audience.",
-    "Technology/AI never formed a topic, so the Big Tech basket is only tested against "
-    "election odds.",
-    "GDELT's feed had 19 outage days (mid-September and most of October); those sessions "
-    "are excluded from the regime split rather than read as quiet news days.",
-    "Yahoo daily closes for the S&P 500 trackers disagree by 15–30bp a day over 25 Jun – 1 Jul "
-    "2026 (they agree on the week's total). Using the median of SPY/IVV/VOO as the "
-    "benchmark, or dropping that week, changes no Stage 2 conclusion.",
-    "The robust Stage 2 results are lagged predictability. They fit slow pricing of "
-    "regulatory risk, but with this many tests and one cycle they are hypotheses to test in "
-    "2028, not a trading rule.",
+    "One campaign (155 sessions): daily tests have little power against effects that build "
+    "over weeks, and the robust Stage 2 results are hypotheses for 2028, not a trading rule.",
+    "The X sample is politically engaged mid-size accounts (median ~24–42k followers), not the "
+    "median voter; Technology/AI never formed a topic, so Big Tech is tested only against odds.",
+    "GDELT had 19 outage days (mid-September, most of October), excluded rather than read as "
+    "quiet. Yahoo closes for SPY/IVV/VOO disagree day by day over 25 Jun – 1 Jul 2026; a median "
+    "benchmark or dropping that week changes no conclusion. Full checks: DATA_AUDIT.md.",
 ]
+
+
+def _cell(g: float, q: float) -> str:
+    """'Σγ (q)' with a marker when the test survives FDR at 10%."""
+    if not np.isfinite(q):
+        return "–"
+    return f"{g:+.2f} ({q:.2f}){' ◆' if q < 0.10 else ''}"
+
+
+def compact_table2(R: Results) -> pd.DataFrame:
+    t = R.tables["table2_granger_stage1"]
+    keep = [c for c in ("Lags", "F", "p", "q (BH)", "Σγ", "p (3d)", "p (rev)") if c in t]
+    return t[keep]
+
+
+def compact_table2b(R: Results) -> pd.DataFrame:
+    """Issue x (series, contract) q-values, plus how closely X tracks the news agenda."""
+    t = R.news_tests
+    if not len(t):
+        return pd.DataFrame({"note": ["no GDELT issue series"]})
+    t = t.assign(issue=t["cause"].str.replace("news_sal_", "").str.replace("news_tone_", ""),
+                 series=np.where(t["cause"].str.startswith("news_sal_"), "Sal", "Tone"),
+                 contract=t["effect"].str.replace("dProb_", ""))
+    m = t.pivot_table(index="issue", columns=["series", "contract"], values="q_value")
+    m.columns = [f"{a} {b} q" for a, b in m.columns]
+    if len(R.salience_validation):
+        m["ρ X vs news"] = R.salience_validation.set_index("issue")["corr_levels"]
+    m.index.name = "Issue"
+    return m
+
+
+def compact_table3(R: Results) -> pd.DataFrame:
+    """Asset x contract matrix: next-session excess-return response Σγ (q), vol and RS."""
+    r, v, rs = R.stage2_ret, R.stage2_vol, R.rigobon_sack
+    rows = []
+    for a in config.ASSETS:
+        row = {"Asset": a}
+        for ch in config.CONTRACTS:
+            x = r[(r["effect"] == a) & (r["cause"] == f"dProb_{ch}")]
+            row[f"Ret: {ch}"] = _cell(x["sum_gamma"].iloc[0], x["q_value"].iloc[0]) \
+                if len(x) else "–"
+        vv = v[v["effect"] == f"vol_{a}"]
+        row["Vol min q"] = vv["q_value"].min() if len(vv) else np.nan
+        s = rs[(rs["asset"] == a) & (rs["contract"] == "Sweep")] if len(rs) else rs
+        row["β RS (Sweep) [95% CI]"] = (f"{s['beta_rs'].iloc[0]:+.2f} [{s['ci_low'].iloc[0]:.1f}, "
+                                        f"{s['ci_high'].iloc[0]:.1f}]") if len(s) else "–"
+        rows.append(row)
+    return pd.DataFrame(rows).set_index("Asset")
 
 
 # ---------------------------------------------------------------------------
@@ -376,82 +410,70 @@ def build_pdf(R: Results, figs: dict[str, Path]) -> None:
         "effects. With one election cycle, read the q-values and the robustness battery "
         "rather than single p-values.", small)]
 
-    story += [Paragraph("Data and provenance", h1),
-              Paragraph("Prediction-market coverage (sessions with a quote at or before 16:00 "
-                        "ET)", h2), tbl(R.pm.coverage),
-              Paragraph("Tweet quality-filter waterfall", h2),
-              tbl(R.filter_report.set_index("step")),
-              Paragraph("Missing prints after alignment to the NYSE calendar: " + ", ".join(
-                  f"{k} {int(v)}" for k, v in R.market.alignment["missing_days"].items())
-                  + ". Vendor triangulation, staleness and outage checks are in DATA_AUDIT.md.",
-                  small),
-              PageBreak(), img(figs["markets"]), img(figs["news"])]
+    cov = R.pm.coverage
+    story += [Paragraph(
+        f"<b>Data.</b> {p['n_tweets']:,} filtered tweets (general + affordability strata, every "
+        "session covered); prices for 9 sector ETFs, 10 single names, SPY and VIX with no "
+        "missing prints; prediction-market quotes on " + ", ".join(
+            f"{c}: {int(cov[c].max())}" for c in cov.columns) + " of 155 sessions; GDELT news "
+        "volume and tone for every issue (19 outage days masked).", body)]
+    story += [PageBreak(), img(figs["markets"], 6.6), img(figs["news"], 6.6)]
 
-    story += [PageBreak(), Paragraph("Topics", h1),
+    story += [PageBreak(), Paragraph("1. Topics: LSA on X discourse", h1),
               Paragraph("<b>Table 1A.</b> SVD latent topics and term loadings (U_k)", body),
               tbl(R.tables["table1a_svd_topics"], 2,
                   widths=[1.25 * inch, 0.42 * inch, 0.35 * inch, 0.45 * inch, 0.42 * inch,
                           0.48 * inch, 3.95 * inch], wrap_cols=("Top terms (loading)",)),
-              Paragraph("Varimax-rotated LSA, k = 30, uncentred TF-IDF. Loadings are entries of "
+              Paragraph("Varimax-rotated LSA, k = 30, uncentred TF-IDF; loadings are entries of "
                         "U_k. Stability: share of 5 refits on 80% subsamples in which the pole "
-                        "reappears (same label, cosine ≥ 0.6).", small),
-              img(figs["spectrum"]), img(figs["loadings"])]
+                        "reappears. Energy/Climate is the least stable (0.6); no Technology/AI "
+                        "axis forms at any k.", small),
+              img(figs["spectrum"], 6.6)]
     story += [PageBreak(),
               Paragraph("<b>Table 1B.</b> Topic salience and sentiment by issue", body),
               tbl(R.tables["table1b_issue_sentiment"], 2),
-              Paragraph("Salience: mean daily share of issue loading, general stratum only. "
-                        "S: 5-session pooled topic-conditioned sentiment. % Re-signed: share "
-                        "of documents whose issue-conditioned polarity differs from generic "
-                        "VADER.", small), img(figs["sentiment"])]
-    story += [PageBreak(), Paragraph("Stage 1: sentiment → prediction markets", h1),
+              Paragraph("Salience: mean daily share of issue loading (general stratum only). S: "
+                        "5-session pooled topic-conditioned sentiment. % Re-signed: documents "
+                        "whose issue-conditioned polarity differs from generic VADER.", small),
+              img(figs["sentiment"], 6.6), img(figs["loadings"], 6.6)]
+    story += [PageBreak(), Paragraph("2. Stage 1: sentiment and news → election odds", h1),
               Paragraph("<b>Table 2.</b> Granger causality tests (topic sentiment → ΔProb)",
-                        body), tbl(R.tables["table2_granger_stage1"]),
+                        body), tbl(compact_table2(R)),
               Paragraph("HC1 F-tests of lags of S_k in an AR model of ΔProb with lagged SPY, "
-                        "ΔVIX and Δ2Y controls; lags by BIC. q: BH FDR across the table. "
-                        "p (3d): 3-session pooled sentiment. p (rev): ΔProb → S_k. "
-                        "*** p&lt;0.01 ** p&lt;0.05 * p&lt;0.10.", small),
-              Paragraph("Covariance SVD (signal–return alpha factors)", h2),
+                        "ΔVIX and Δ2Y controls; lags by BIC; q: BH FDR across the table; "
+                        "p (3d): 3-session pooled sentiment; p (rev): ΔProb → S_k.", small),
+              Paragraph("<b>Table 2B.</b> GDELT news salience and tone → ΔProb (FDR q-values)",
+                        body), tbl(compact_table2b(R), 2),
+              Paragraph("Same specification and FDR as Table 2; outage sessions drop out. "
+                        "ρ: correlation of X issue salience with GDELT's share of midterm "
+                        "coverage mentioning the issue (5-session means).", small),
+              Paragraph("<b>Covariance SVD.</b> Signal–return alpha factors, trained to "
+                        f"{R.cov_svd.train_end.date()}, scored out of sample after it.", body),
               tbl(pd.DataFrame({"σ": R.cov_svd.S, "perm p": R.cov_svd.p_values},
                                index=R.cov_svd.U.columns).join(
-                  R.factor_oos.set_index("factor"))),
-              Paragraph(f"Estimated on sessions up to {R.cov_svd.train_end.date()}; the "
-                        "out-of-sample statistics use the remaining sessions only.", small),
-              img(figs["covsvd"]),
-              PageBreak(), Paragraph("News salience check (GDELT)", h1),
-              Paragraph("<b>Does X discourse track the news agenda?</b> Correlation of X issue "
-                        "salience (general stratum) with GDELT's share of midterm coverage "
-                        "mentioning the issue, 5-session means.", body),
-              tbl(R.salience_validation.set_index("issue") if len(R.salience_validation)
-                  else pd.DataFrame({"note": ["no GDELT issue series"]})),
-              Paragraph("<b>Table 2B.</b> Granger causality tests (GDELT news salience and "
-                        "tone → ΔProb)", body),
-              tbl(R.tables["table2b_news_salience"]),
-              Paragraph("Same specification and FDR as Table 2. GDELT outage sessions are "
-                        "missing, not zero, and drop out. Availability of each GDELT series: "
-                        + ", ".join(f"{i} ({'counts' if r.news_counts else 'no counts'}, "
-                                    f"{'tone' if r.news_tone else 'no tone'})"
-                                    for i, r in R.news_status.iterrows()) + ".", small)]
-    t3 = R.tables["table3_basket_reactivity"]
+                  R.factor_oos.set_index("factor")[
+                      ["oos_days", "oos_corr", "oos_t", "sign_hit_rate"]])),
+              img(figs["covsvd"], 6.2)]
     rob = R.robustness
-    story += [PageBreak(), Paragraph("Stage 2: prediction markets → midterm basket", h1),
-              Paragraph("<b>Table 3.</b> Midterm equity basket reactivity matrix", body),
-              tbl(t3.drop(columns=["Ret F", "Vol F"])),
-              Paragraph("Ret: excess return over SPY. Vol: 2(H−L)/(H+L), differenced where "
-                        "ADF does not reject a unit root. q: BH across each 57-test family. "
-                        "β RS: Rigobon–Sack estimate; VarH/VarL and its p-value are the "
-                        "relevance condition.", small),
-              Paragraph("Robustness battery for every FDR survivor", h2),
-              tbl(rob.drop(columns=["gamma_1st_half", "gamma_2nd_half"])
-                  .set_index(["stage", "cause", "effect"]) if len(rob)
+    story += [PageBreak(), Paragraph("3. Stage 2: election odds → midterm basket", h1),
+              Paragraph("<b>Table 3.</b> Midterm equity basket reactivity matrix: next-session "
+                        "excess-return response Σγ (FDR q), ◆ = q < 0.10", body),
+              tbl(compact_table3(R), 2),
+              Paragraph("Excess return over SPY; Vol: 2(H−L)/(H+L), smallest q across the three "
+                        "contracts; β RS: Rigobon–Sack response to ΔP(Sweep), H = top 20% GDELT "
+                        "news sessions. Full 57-row table with F, p and relevance tests: "
+                        "outputs/tables/table3_basket_reactivity.md.", small),
+              Paragraph("<b>Robustness battery</b> for every FDR survivor (p-values)", body),
+              tbl(rob[["cause", "effect", "sum_gamma", "p", "p_HAC", "p_no_extremes",
+                       "p_excl_dates", "p_1st_half", "p_2nd_half", "p_placebo", "robust"]]
+                  .assign(cause=lambda d: d["cause"].str.replace("dProb_", ""))
+                  .set_index(["cause", "effect"]) if len(rob)
                   else pd.DataFrame({"note": ["no survivors"]})),
-              img(figs["granger"]), img(figs["events"])]
-    story += [PageBreak(), Paragraph("Methods", h1)] + [Paragraph(x, body) for x in METHODS]
-    story += [Paragraph("Topic-model comparison (baselines)", h2),
-              tbl(R.model_comparison.set_index("method"))]
-    story += [Paragraph("Limitations", h1)] + [Paragraph(x, body) for x in LIMITATIONS]
-    story += [Paragraph("AI use", h1), Paragraph(
-        "Built with Claude Code. What was done by the model and what by the author is "
-        "disclosed in AI_USE.md.", body)]
+              img(figs["events"], 6.6)]
+    story += [PageBreak(), Paragraph("4. Methods", h1)] + [Paragraph(x, body) for x in METHODS]
+    story += [Paragraph("5. Limitations", h1)] + [Paragraph("• " + x, body) for x in LIMITATIONS]
+    story += [Paragraph("AI use: built with Claude Code; see AI_USE.md for what was done by "
+                        "the model and by the author.", small)]
 
     doc = SimpleDocTemplate(str(PDF_PATH), pagesize=letter, leftMargin=0.55 * inch,
                             rightMargin=0.55 * inch, topMargin=0.55 * inch,
