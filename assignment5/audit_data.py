@@ -51,6 +51,19 @@ def main() -> None:
     except Exception as exc:
         idx_check, idx_flags = pd.DataFrame({"error": [repr(exc)]}), pd.DataFrame()
 
+    from src import nlp_topics as nt
+    from src.data_loader import trading_calendar
+
+    cal = trading_calendar(config.START, config.END)
+    tweets = nt.load_cached_tweets()
+    tweet_cov = dq.tweet_coverage(tweets, cal) if len(tweets) else pd.DataFrame()
+    tw_filter = nt.quality_filter(tweets)[1].as_frame() if len(tweets) else pd.DataFrame()
+    led_path = config.RAW_DIR / "tweets" / "ledger.csv"
+    led = pd.read_csv(led_path) if led_path.exists() else pd.DataFrame({"credits": []})
+    ledger_calls, ledger_credits = len(led), int(led["credits"].sum())
+    gd_summary, gd_flags = dq.gdelt_coverage(
+        nt.collect_gdelt_timelines(config.START, config.END, fetch=False), config.START, config.END)
+
     agree, gaps = dq.venue_agreement(pm.by_venue)
     pi_agree, _ = dq.venue_agreement(pm.by_venue, "polymarket", "predictit")
     md = [f"# Data audit\n\nSample {config.START} to {config.END}; "
@@ -82,6 +95,12 @@ def main() -> None:
           section("Consensus moves larger than 4pp, by venue", dq.large_moves(
               pm.by_venue[pm.by_venue["venue"] != "predictit"], pm.consensus)),
           section("Consensus P(Dem) summary", pm.consensus.describe().T),
+          "## 3. Text\n\n",
+          section("Tweets by stratum (twitterapi.io)", tweet_cov,
+                  f"Paid calls in the ledger: {ledger_calls} for {ledger_credits:,} credits."),
+          section("Tweet quality-filter waterfall", tw_filter),
+          section("GDELT DOC timelines", gd_summary),
+          section("GDELT outage days (masked, never read as quiet news days)", gd_flags),
           section("Errors on this run", pd.DataFrame({"error": pm.errors}) if pm.errors
                   else pd.DataFrame())]
     OUT.write_text("".join(md), encoding="utf-8")

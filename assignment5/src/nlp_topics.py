@@ -320,7 +320,7 @@ def parse_gdelt_timeline(payload: dict) -> pd.DataFrame:
 
 
 def collect_gdelt_timelines(start: str, end: str, refresh: bool = False,
-                            pause: float = 45.0) -> pd.DataFrame:
+                            pause: float = 45.0, fetch: bool = True) -> pd.DataFrame:
     """Daily article counts, total monitored volume and GDELT tone, overall and per topic.
 
     Columns: ``count_<topic>``, ``tone_<topic>`` (and ``count_All``/``tone_All``
@@ -343,6 +343,9 @@ def collect_gdelt_timelines(start: str, end: str, refresh: bool = False,
     for name, q in queries.items():
         for mode in ("timelinevolraw", "timelinetone"):
             path = cache / f"{re.sub(r'[^A-Za-z]+', '_', name)}_{mode}.json"
+            if not fetch and not path.exists():
+                missing.append(f"{name}/{mode} (not cached)")
+                continue
             if refresh or not path.exists():
                 try:
                     payload = gdelt_request({"query": q, "mode": mode, "timelinesmooth": 0,
@@ -368,8 +371,12 @@ def collect_gdelt_timelines(start: str, end: str, refresh: bool = False,
 
 def gdelt_outages(norm: pd.Series, window: int = 15, floor: float = 0.3) -> pd.Series:
     """Days where GDELT's total monitored volume is below ``floor`` x its rolling median."""
-    med = norm.rolling(window, center=True, min_periods=5).median()
-    return (norm < floor * med).rename("outage")
+    valid = norm.where(norm > 0)
+    med = valid.rolling(window, center=True, min_periods=3).median()
+    # where a local median cannot be formed (sample edges, long outages) fall back to
+    # the whole-sample median, so a collapse at the end of the sample is still caught
+    med = med.fillna(valid.median())
+    return ((norm < floor * med) | (norm < floor * valid.median())).rename("outage")
 
 
 def gdelt_to_trading_days(tl: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.DataFrame:
@@ -380,11 +387,15 @@ def gdelt_to_trading_days(tl: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.Da
     UTC days that map to a session (weekends roll into Monday) and tones are
     article-weighted means. Salience is each topic's share of midterm coverage.
     """
-    tl = tl.copy()
-    bad = gdelt_outages(tl["norm"])
+    # calendar days GDELT returned nothing for are outages too, not quiet news days
+    full = pd.date_range(tl.index.min().normalize(), tl.index.max().normalize(), freq="D")
+    full = full.union(pd.date_range(calendar[0] - pd.Timedelta(days=3), calendar[-1], freq="D"))
+    tl = tl.reindex(full)
+    bad = gdelt_outages(tl["norm"].fillna(0)) | tl["norm"].isna()
     tl.loc[bad] = np.nan
     ends = pd.Series(tl.index + pd.Timedelta(days=1), index=tl.index).dt.tz_localize("UTC")
     tl["session"] = to_trading_day(ends, calendar).values
+    sess_all = tl["session"]
     tl = tl.dropna(subset=["session"])
     topics = [c[len("count_"):] for c in tl.columns if c.startswith("count_")]
     out = pd.DataFrame(index=calendar)
@@ -395,7 +406,7 @@ def gdelt_to_trading_days(tl: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.Da
         out[f"count_{k}"] = n
         out[f"tone_{k}"] = w / n.replace(0, np.nan)
     out["norm"] = g["norm"].sum(min_count=1)
-    out["outage_days"] = bad.groupby(tl["session"]).sum() if len(tl) else 0
+    out["outage_days"] = bad.groupby(sess_all).sum().reindex(calendar, fill_value=0)
     for k in topics:
         if k != "All":
             out[f"sal_{k}"] = out[f"count_{k}"] / out["count_All"].replace(0, np.nan)

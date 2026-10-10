@@ -139,8 +139,8 @@ def large_moves(long: pd.DataFrame, consensus: pd.DataFrame,
 
 
 def sibling_divergence(ohlc: dict[str, pd.DataFrame], siblings: dict[str, pd.DataFrame],
-                       pairs: dict[str, list[str]], z: float = 6.0) -> tuple[pd.DataFrame,
-                                                                            pd.DataFrame]:
+                       pairs: dict[str, list[str]],
+                       z: float = 6.0) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Compare each fund's daily returns with same-exposure funds from other issuers.
 
     A day where a fund diverges from *all* its siblings by more than ``z`` robust
@@ -169,3 +169,40 @@ def sibling_divergence(ohlc: dict[str, pd.DataFrame], siblings: dict[str, pd.Dat
                               "fund_bp": 1e4 * j.loc[day, t], "sibling_bp": 1e4 * j.loc[day, s],
                               "z": zs[day]})
     return pd.DataFrame(summ), pd.DataFrame(flags)
+
+
+# ---------------------------------------------------------------------------
+# Text
+# ---------------------------------------------------------------------------
+def tweet_coverage(tweets: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.DataFrame:
+    """Per stratum: sessions covered, tweets per session, author concentration, audience size."""
+    rows = []
+    for st, d in tweets.groupby("stratum"):
+        per = d.groupby("fetch_session").size().reindex(
+            [str(x.date()) for x in calendar], fill_value=0)
+        f = pd.to_numeric(d["followers"], errors="coerce")
+        rows.append({"stratum": st, "tweets": len(d),
+                     "sessions_with_tweets": int((per > 0).sum()),
+                     "sessions": len(calendar), "min_per_session": int(per.min()),
+                     "median_per_session": float(per.median()), "authors": d["author"].nunique(),
+                     "top10_author_share": d["author"].value_counts().head(10).sum() / len(d),
+                     "followers_p25": f.quantile(.25), "followers_median": f.median(),
+                     "followers_p75": f.quantile(.75),
+                     "share_under_10k_followers": (f < 1e4).mean()})
+    return pd.DataFrame(rows).set_index("stratum")
+
+
+def gdelt_coverage(tl: pd.DataFrame, start: str, end: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Days GDELT returned, and every day flagged as an outage (absent or < 30% of normal)."""
+    from .nlp_topics import gdelt_outages
+
+    days = pd.date_range(start, end, freq="D")
+    norm = tl["norm"].reindex(days) if "norm" in tl else pd.Series(np.nan, index=days)
+    out = gdelt_outages(norm.fillna(0)) | norm.isna()
+    summ = pd.DataFrame([{"calendar_days": len(days), "days_returned": int(norm.notna().sum()),
+                          "outage_days": int(out.sum()),
+                          "median_norm": norm.median(), "queries_cached": int(
+                              sum(c.startswith(("count_", "tone_")) for c in tl.columns))}])
+    flags = pd.DataFrame({"date": [d.date() for d in days[out]],
+                          "articles_monitored": norm[out].values})
+    return summ, flags

@@ -135,3 +135,19 @@ def test_ledger_counts_attempts(tmp_path):
     led.record("2026-08-14_p1", 0)
     led.record("2026-08-14_p1", 0)
     assert led.attempts("2026-08-14_p1") == 2 and led.attempts("other") == 0
+
+
+def test_gdelt_missing_days_are_outages():
+    cal = trading_calendar("2026-09-08", "2026-09-18")
+    idx = pd.date_range("2026-09-07", "2026-09-17", freq="D").drop(pd.Timestamp("2026-09-15"))
+    tl = pd.DataFrame({"count_All": 100.0, "tone_All": -1.0, "norm": 1e5}, index=idx)
+    out = nt.gdelt_to_trading_days(tl, cal)
+    assert np.isnan(out.loc["2026-09-16", "count_All"])   # the 15th is absent -> masked
+    assert out.loc["2026-09-16", "outage_days"] == 1
+    assert out.loc["2026-09-17", "count_All"] == 100
+
+
+def test_gdelt_outage_at_sample_end_is_caught():
+    norm = pd.Series([1e5] * 30 + [5e4, 4000, 678], index=pd.date_range("2026-09-01", periods=33))
+    out = nt.gdelt_outages(norm)
+    assert out.iloc[-1] and out.iloc[-2] and not out.iloc[-3] and out.iloc[:30].sum() == 0
